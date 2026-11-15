@@ -1,0 +1,19 @@
+name: kernel-referee-ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  kernel-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-build: false
+      - name: Kernel-check seed probes (lake build)
+        run: lake build
+      - name: Referee self-test (fail-closed)
+        run: python3 selftest.py
+      - name: Chain integrity check
+        run: python3 -c "import chains; print(chains.verify())"

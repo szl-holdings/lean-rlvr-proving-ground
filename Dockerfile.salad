@@ -1,0 +1,24 @@
+# Salad GPU deployment RECIPE — recorded, NOT LAUNCHED.
+# Starting GPU training is an owner-cost decision (standing directive:
+# no payments, no asks). This file exists so the launch lane has a
+# pinned, reproducible image when the owner greenlights a run.
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y curl git python3 python3-pip && rm -rf /var/lib/apt/lists/*
+
+# elan + pinned Lean toolchain (matches lutar-lean v4.35.0)
+ENV ELAN_HOME=/opt/elan
+RUN curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+ENV PATH=/opt/elan/bin:$PATH
+
+WORKDIR /env
+COPY lean-toolchain lakefile.lean referee.py rewards.py chains.py admission.py grpo_adapter.py probes.py selftest.py ./
+COPY probes/ ./probes/
+
+# Pin the toolchain (pre-downloads so rollouts never pay the cost)
+RUN lean --version
+
+# RL trainer deps are NOT installed here: the reward environment is
+# intentionally trainer-agnostic (see grpo_adapter.py). The training
+# framework image layers on top of this one in the launch lane.
+CMD ["python3", "selftest.py"]
