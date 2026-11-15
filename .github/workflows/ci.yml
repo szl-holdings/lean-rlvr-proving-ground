@@ -18,5 +18,7 @@ jobs:
         run: lake build
       - name: Referee self-test (fail-closed)
         run: python3 selftest.py
+      - name: Test chain-gate failure propagation with synthetic receipts
+        run: python3 -B -m unittest discover -s tests -p 'test_ci_contract.py' -v
       - name: Chain integrity check
-        run: python3 -c "import chains; print(chains.verify())"
+        run: python3 -c "import chains; result = chains.verify(); print(result); raise SystemExit(0 if result.get('ok') is True else 1)"
