@@ -4,9 +4,41 @@
 
 Estate artifact, fail-closed. Merge to protected mains is owner-gated. Nothing in this repo authorizes a launch.
 
+## Current assurance boundary: review references, not training approval
+
+`PROOF_ACCEPTED` is the legacy verdict name for **elaboration plus exactly one
+axiom report bound to the requested declaration**. Missing, unrelated, duplicate
+or malformed reports are rejected. The receipt binds the trusted statement,
+spliced source, attempt, referee implementation and build output by SHA-256.
+This is not independent proof replay, semantic validation of an informal claim,
+or permission to train, publish or execute a model.
+
+`admission.admit` now requires an exact, separately trusted `expected_chain_head`
+and the controller-owned statement registry. It validates the entire hash chain,
+source identities, statement binding, toolchain, successful lake lane and allowed
+axioms before staging a new immutable **REVIEW_REQUIRED** reference generation.
+Legacy receipts missing those fields must be replayed. Fast-lane observations
+never enter this corpus. An empty eligible set is unavailable, not a pass.
+The references point to attempt receipts, not proof bodies; a separate replayable
+proof store is still required before training-data promotion.
+
+**Untrusted Lean must run in an OS-isolated, credential-free worker.** A temporary
+directory is not a security sandbox, and parsing a printed report is not resistant
+to arbitrary metaprograms forging output. Independent checking and trusted
+statement comparison remain separate required controls. This patch does not
+qualify the referee as a hostile-code execution service.
+
+For Flagship55, use the reviewed source/assumption/negative-control records as
+curriculum candidates only. Keep axioms as assumptions, conjectures as open or
+refuted-as-stated claims, and examples as examples. Preserve the locked-eight
+membership and exact theorem hypotheses. Do not change running Flagship54 or
+admit the private Brain graph to gradients. No budget or launch gate is changed.
+
+See Lean's official [proof-validation guidance](https://lean-lang.org/doc/reference/latest/ValidatingProofs/).
+
 ## What this is
 
-The recorded frontier pattern, built: **generate → Lean kernel referees → train only on accepted traces.** A model attempts proofs of the proving-ground atlas probes; the Lean kernel — not an LLM judge, not a rubric — decides the reward:
+The recorded frontier pattern, built: **generate → Lean kernel referees → train only on accepted traces.** A model attempts proofs of the proving-ground atlas probes; the local elaboration/report observation — not an LLM judge — supplies the provisional reward:
 
 | attempt class | verdict | reward |
 | --- | --- | --- |
