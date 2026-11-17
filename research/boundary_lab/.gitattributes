@@ -1,0 +1,2 @@
+# Preserve the audited support core's exact Git blob bytes on Windows and Linux.
+support_memory.py text eol=lf
