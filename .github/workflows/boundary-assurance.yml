@@ -24,3 +24,6 @@ jobs:
         run: |
           python3 -B -m unittest -v
           python3 -B assurance_demo.py --out "$RUNNER_TEMP/boundary-assurance-${{ github.run_id }}-${{ github.run_attempt }}"
+      - name: Offline frontend contracts (no browser, models or network)
+        working-directory: research/boundary_lab
+        run: node --test assurance_web/client.test.mjs
