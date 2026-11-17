@@ -89,3 +89,9 @@ A later REAL MODEL_RESPONSE batch must bind an immutable model revision and pres
 - Never reward blanket abstention as correctness; on an empty verified denominator, quality is **UNAVAILABLE**, not 0% or 100%.
 - Do not fabricate open-problem breakthroughs based on valid JSON, an output filename, unsupported code, a Lean sorry, a printed report, or a model's confidence.
 - No new paid compute, training, replication, publication, license override, controller, watcher, provider mutations or protected-branch bypass is authorized here.
+
+## Answer-exposure pre-review
+
+The [metadata-only exposure review](BENCHMARK_EXPOSURE.md) records visible
+reference answers, unknown contamination and evaluation-rights holds. It never
+grants held-out or training admission and does not replace independent checks.

@@ -37,5 +37,6 @@ jobs:
           python3 -B -m unittest discover -s tests -p 'test_putnam25_preflight.py' -v
           python3 -B -m unittest discover -s tests -p 'test_local_model_probe.py' -v
           python3 -B -m unittest discover -s tests -p 'test_score_local_attempts.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_benchmark_exposure.py' -v
       - name: Chain integrity check
         run: python3 -c "import chains; result = chains.verify(); print(result); raise SystemExit(0 if result.get('ok') is True else 1)"
