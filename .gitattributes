@@ -1,0 +1,11 @@
+# Byte-exact synthetic math fixtures: preserve LF across Windows/Linux.
+# Their SHA-256 and deterministic generator compare raw bytes, not text semantics.
+curriculum/train.jsonl text eol=lf
+curriculum/holdout.jsonl text eol=lf
+curriculum/manifest.json text eol=lf
+# Markdown and workflow edits must not cause whole-file CRLF churn.
+README.md text eol=lf
+.github/workflows/ci.yml text eol=lf
+# Hard-math source index is a canonical one-line JSON record with final LF.
+research/hard_problems/catalog.v1.json text eol=lf
+research/hard_problems/synthetic-submissions.v1.json text eol=lf

@@ -67,6 +67,20 @@ Allowed axiom base: propext, Classical.choice, Quot.sound. Anything else is disc
 - probes/Probes.lean — v0 hand-formalized core-only fragments (Egyptian Horus-Eye sum, Kraft inequality, RS(10,6) Singleton arithmetic fragment), sorry-free and kernel-checked by lake build in CI.
 - The repo is itself a core-only Lake package (NO Mathlib dependency): kernel checks run cold in seconds on any CPU/GPU node.
 
+## Hard-math research / Putnam challenge catalog (evaluation-only)
+
+The [source-bound hard-problem index](research/hard_problems/README.md) adds
+**672 PutnamBench Lean-file references** (including the twelve Putnam 2025 A1–B6
+identifiers), **1,861 Formal Conjectures source references**, and ten named
+research challenges. Files are pinned to immutable upstream Git revisions;
+no external theorem text, proof body, weights or untrusted Lean is executed.
+**Putnam problems have published solutions; Formal Conjectures files are not
+individually certified as unsolved.** This metadata catalog is not a model
+accuracy result or a training corpus. The three-role Flagship55 Khipu teacher,
+guide and skeptic remain proposed and untrained. The synthetic controls verify
+that abstention is not a proof, a sorry-based claim is rejected and an unsupported
+proof claim is UNVERIFIED. No autonomous dataset admission or new GPU run.
+
 ## Doctrine alignment
 
 - Kernel-referee admission rule (flagship55 curriculum spec, merged): only lake-build-accepted proofs enter corpus v2.
