@@ -1,0 +1,52 @@
+{
+  "schema": "szl.boundary-sources/v0.1",
+  "formula_revision": "59d6b026b8418f59bd6535d532bdeb7551b398f0",
+  "formula_source": "https://github.com/szl-holdings/lutar-lean/blob/59d6b026b8418f59bd6535d532bdeb7551b398f0/claims/locked-formulas.v1.json",
+  "formula_statements": "Manually reviewed projections of exact claim registry; no raw-registry byte hash claimed. No Lean-to-Python equivalence proof.",
+  "locked_ids": [
+    "F1",
+    "F4",
+    "F7",
+    "F11",
+    "F12",
+    "F18",
+    "F19",
+    "F22"
+  ],
+  "lambda_status": "CONJECTURE_1_OPEN_FALSE_AS_STATED; not used as an authorization gate",
+  "datasets": [
+    {
+      "repo": "SZLHOLDINGS/lean-invariants-sft-v1",
+      "revision": "d8c3e3c73848af16bf9483eabf0599a01999344d",
+      "path": "train.jsonl",
+      "sha256": "b03f9280b729d0a7013f737181e13ea7615ac64b39f4ed33572239e265d75fc0",
+      "observed_records_or_atlas_entries": 304,
+      "use": "inspection_only_not_training_admission"
+    },
+    {
+      "repo": "SZLHOLDINGS/axiom-invariant-corpus-v1",
+      "revision": "235d9c41384a627fae290aa89792ae079103b3ab",
+      "path": "axiom_invariant_corpus.jsonl",
+      "sha256": "325ba8d63537d4eacce5673bac8bfffe98c5545b7985652ace2fed0063f269a9",
+      "observed_records_or_atlas_entries": 94,
+      "use": "inspection_only_not_training_admission"
+    },
+    {
+      "repo": "SZLHOLDINGS/formula-proving-ground",
+      "revision": "4e660c4836faad70bcf9bd1d26fdf95fc5bf97d3",
+      "path": "proving-ground.json",
+      "sha256": "e62ede9a696bd8348983eabbdb4db98366718e111a9dfd1fb236ff94b9ae0e93",
+      "observed_records_or_atlas_entries": 30,
+      "use": "inspection_only_not_training_admission"
+    },
+    {
+      "repo": "SZLHOLDINGS/abstention-doctrine-sft-v1",
+      "revision": "f160c6ba2834bf270204d5ea1d793e7bf2dee0fd",
+      "path": "train.jsonl",
+      "sha256": "6ee698e6e3b379fefe4c456c32e99cd5956e648d169e10eb60bc0da154513529",
+      "observed_records_or_atlas_entries": 95,
+      "use": "inspection_only_not_training_admission"
+    }
+  ],
+  "dataset_inspection": "Pinned bytes were downloaded and object-identity checked on BETTERWITHAGE on 2026-11-16. Raw dataset rows are not included or trained on by this package."
+}
