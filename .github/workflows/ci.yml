@@ -34,5 +34,6 @@ jobs:
         run: |
           python3 research/hard_problems/challenge_index.py validate --catalog research/hard_problems/catalog.v1.json
           python3 -B -m unittest discover -s tests -p 'test_hard_problem_catalog.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_putnam25_preflight.py' -v
       - name: Chain integrity check
         run: python3 -c "import chains; result = chains.verify(); print(result); raise SystemExit(0 if result.get('ok') is True else 1)"

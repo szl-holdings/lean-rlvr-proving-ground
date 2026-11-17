@@ -18,6 +18,14 @@ Formal Conjectures contains **1,861 source files** in the selected FormalConject
 
 The curated 10-name board points to Riemann hypothesis, P versus NP, Navier–Stokes existence/smoothness, Birch–Swinnerton-Dyer, Yang–Mills mass gap, Hodge conjecture, Collatz, Goldbach, twin primes, and Legendre's conjecture. It is a **research reading queue**, not a contemporaneous authoritative unsolved-status attestation.
 
+## Exact-source Putnam 2025 preflight
+
+The [source-byte integrity harness](PUTNAM2025_SOURCE_PREFLIGHT.md) verifies the
+12 pinned 2025 Lean source files locally without executing them. Its readback
+found 18 upstream sorry placeholders, six solution abbreviations and zero
+model evaluations. The real files and detailed readback remain private;
+GitHub contains only the auditable validator, tests and scope documentation.
+
 ## Existing first-party Putnam semantic gap
 
 The owner-controlled [Lutar Putnam 2025 A1 file](https://github.com/szl-holdings/lutar-lean/blob/bcfc25badcd73d6b6f013853c1fb8bf384b2e460/Lutar/Putnam/P_A1.lean)
