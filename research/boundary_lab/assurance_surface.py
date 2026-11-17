@@ -17,7 +17,6 @@ from typing import Callable
 from urllib.parse import parse_qs
 
 import support_memory as sm
-from impact_delta import delta_states
 
 CORE_SHA256 = "7dfdc9419b210a146a06b0839deff299117496f07eff882d292c1c0eb7ad6040"
 STATES = {"SUPPORTED", "UNSUPPORTED", "WITHDRAWN", "EXPIRED", "RIGHTS_UNAVAILABLE"}
@@ -193,7 +192,7 @@ class AssuranceService:
             if self.policy(ctx, None, "read") is not True:
                 raise BoundaryError("READ_DENIED", 403)
             before = states_for(own, removed, final_now)
-            after = delta_states(own, removed, final_now, set(withdraw), before)
+            after = states_for(own, removed | set(withdraw), final_now)
             objects = []
             for key, node in own.items():
                 if key not in visible:

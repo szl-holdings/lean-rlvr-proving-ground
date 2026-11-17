@@ -19,9 +19,11 @@ source loses support. Rights, expiry, and existing withdrawal have the same
 precedence as the reference function. A previously expired source can move to
 WITHDRAWN without causing an additional loss of supported claims.
 
-The HTTP response schema remains `szl.assurance-surface/v0.3`; the existing
-same-origin frontend continues consuming its server-calculated `scenario_state`
-field. The additional UI text counts only visible unredacted state transitions
+The HTTP response schema remains `szl.assurance-surface/v0.3`. The service
+continues using the **authoritative full replay** for every hypothetical state.
+The incremental algorithm is offline-only and is not imported or invoked by the
+HTTP service. The same-origin frontend consumes the server-calculated
+`scenario_state` field. The additional UI text counts only visible unredacted state transitions
 and separately counts objects moving from SUPPORTED to a non-supported state.
 This is **hypothetical**, and counts do not constitute authorization to repair,
 invalidate, train, promote, or execute.
@@ -39,14 +41,19 @@ The generator and tests are author-supplied; they are repeatability evidence,
 not independent formal verification. This is not a Lean/Python refinement proof,
 a complete distributed authorization protocol, or independent witnessing.
 
-No speedup is claimed. Reverse-index construction is itself O(E); in the current
-128-node public graph cap, incremental replay can be slower than a second complete
-pass. Any performance claim requires pinned same-host measurement, matching
-outputs, fixed workloads, uncertainty and explicit baseline. The reason to
-admit this algorithm first is **testable semantic precision** and the option to
-reuse the inspected dependency frontier when a future owner controls a larger
-incremental graph. Browser-rendered acceptance, live owner integration and
-model-behavior evaluation remain separate gates.
+**Performance hold.** Reverse-index construction is itself O(E). A fixed
+synthetic 128-node same-host diagnostic on BETTERWITHAGE (5,000 paired runs,
+2026-11-17T04:25:31Z) measured median full replay **53,400 ns** and median
+incremental replay **69,400 ns**, a ratio of **1.30**. The trial was serial,
+shared-host, order-biased and not an independent benchmark; it is sufficient
+to **reject an automatic runtime substitution** in this scope, not to establish
+a universal performance ranking. Source: private synthetic-timing.json,
+SHA-256 95a831def203de14863cf7e1ef1ee381f6938758f32218e2bc800779eb1da0ca.
+The candidate is retained only as a reproducible differential oracle / future
+research direction. Any future activation requires a demonstrably favorable,
+pinned representative workload and separate review, not an optimistic cost guess.
+Browser-rendered acceptance, live owner integration and model-behavior
+evaluation remain separate gates.
 
 ## Preservation
 

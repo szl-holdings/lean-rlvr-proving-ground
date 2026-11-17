@@ -7,8 +7,9 @@ resolution, makes no persistent changes, and does not certify source truth.
 
 Changes only propagate when an actual parent SUPPORT STATE changes. All
 calculations retain the original WITHDRAWN > RIGHTS_UNAVAILABLE > EXPIRED
-precedence and OR-of-AND claim semantics. This is a research implementation,
-not an unmeasured speedup claim or a distributed invalidation protocol.
+precedence and OR-of-AND claim semantics. This is an OFFLINE research candidate, deliberately not used by the HTTP
+service after a same-host 128-node diagnostic measured it slower than full
+replay. No speedup claim or distributed invalidation protocol is implied.
 """
 from __future__ import annotations
 

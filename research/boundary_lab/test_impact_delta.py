@@ -138,16 +138,16 @@ class IncrementalBoundaryTests(unittest.TestCase):
                 observations += 1
         self.assertEqual(observations, 6000)
 
-    def test_http_path_consumes_incremental_results_without_writes(self):
+    def test_hypothetical_read_keeps_full_replay_and_no_writes(self):
         with tempfile.TemporaryDirectory() as d:
             demo = make_demo(Path(d)/"demo", clock=lambda: 1000, ttl=60)
             ctx = surface.Context("research-controller", "research")
             before = demo.ledger.read_bytes()
-            with patch.object(surface, "delta_states", wraps=delta_states) as called:
+            with patch.object(surface, "states_for", wraps=surface.states_for) as called:
                 result = demo.service.snapshot(
                     ctx, expected_head=demo.anchor_box[0].head, withdraw=("A",)
                 )
-            self.assertEqual(called.call_count, 1)
+            self.assertEqual(called.call_count, 2)
             view = {n["id"]: n for n in result["objects"]}
             self.assertEqual(view["only_A"]["scenario_state"], "UNSUPPORTED")
             self.assertEqual(view["either"]["scenario_state"], "SUPPORTED")
