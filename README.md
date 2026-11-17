@@ -85,7 +85,11 @@ sorry placeholders and six solution abbreviations. That is source verification,
 not model-quality evaluation or a mathematical proof. A [bounded local model
 probe](research/hard_problems/LOCAL_MODEL_PROBE.md) adds immutable-source
 prompts and an existing-Ollama-only inference path; the first live request hit
-a metadata timeout, so real benchmark quality remains UNAVAILABLE. No autonomous
+a metadata timeout. A second already-running on-host Ollama listener was
+then independently observed; six Qwen3 4B Putnam responses were recorded
+as **ABSTAIN** and [reconciled offline](research/hard_problems/LOCAL_SELECTIVE_REPLAY.md)
+with explicit 0% answering coverage. Mathematical accuracy, selective risk,
+Khipu/Goedel and Flagship55 benchmarks remain UNAVAILABLE. No autonomous
 dataset admission, model restart or new GPU training run.
 
 ## Doctrine alignment
