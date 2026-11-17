@@ -36,6 +36,15 @@ and its classifications are **not mathematical proof scores**. In the initial
 out; **no generated model response was observed**. No restart, remote fallback,
 paid job, model modification or production qualification occurred.
 
+## Actual local mathematical behavior (ungraded)
+
+The [six-case offline scoreboard](LOCAL_SELECTIVE_REPLAY.md) reconciles six
+source-verified Putnam 2025 Qwen3 4B local replies, **all explicit ABSTAIN**.
+No source control, model weight or cloud job was changed. It reports 0% answer
+coverage and **UNAVAILABLE** selective risk/math accuracy rather than
+mislabeling six abstentions as valid proofs. This is not a Khipu, Goedel or
+Flagship55 evaluation, nor an independently checked mathematical result.
+
 ## Existing first-party Putnam semantic gap
 
 The owner-controlled [Lutar Putnam 2025 A1 file](https://github.com/szl-holdings/lutar-lean/blob/bcfc25badcd73d6b6f013853c1fb8bf384b2e460/Lutar/Putnam/P_A1.lean)

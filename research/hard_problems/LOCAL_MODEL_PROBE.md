@@ -35,6 +35,15 @@ execute model-produced Lean, or grant proof/training/merging authority.
   MANUAL_EXTRACTION_REQUIRED / UNVERIFIED_PROOF_TEXT / NO_RESPONSE.
   **None is a kernel-checked proof.**
 
+## Six-case local baseline observation
+
+The later [offline source-bound selective replay](LOCAL_SELECTIVE_REPLAY.md)
+records six actual local Qwen3 4B responses, all ABSTAIN, on exact Putnam
+2025 sources. This is a separate existing on-host interface, not a recovery
+of the unresponsive default Ollama listener, not Khipu, and not Flagship55.
+Six source/response receipt hashes were replayed without re-running a model;
+mathematical accuracy and selective risk remain UNAVAILABLE.
+
 ## Current evidence / local access hold, November 17, 2026
 
 - Existing Ollama API initially returned model aliases and digests, including
