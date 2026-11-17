@@ -1,0 +1,29 @@
+{
+  "data_origin": "FIRST_PARTY_DETERMINISTIC_SYNTHETIC",
+  "generator": "curriculum/lutar_axioms.py",
+  "holdout": {
+    "rows": 80,
+    "sha256": "964fecc3e6e1143db8e79ae029b9679c23ded4710b9801b926ea9b32b3dc723c"
+  },
+  "independent_holdout": false,
+  "lean_proof_of_dataset": false,
+  "license": "Apache-2.0",
+  "model_weights": "NONE",
+  "review_state": "REVIEW_REQUIRED",
+  "runtime_qualification": false,
+  "schema": "szl.lutar.numeric-curriculum-manifest/v1",
+  "source": {
+    "axioms_blob": "fc922178ca30d588dbb330dc834428bcfca36367",
+    "axioms_path": "Lutar/Axioms.lean",
+    "commit": "c2ca813fca00ecf58bcc5f505f2aa4237fbf2481",
+    "invariant_blob": "4a418c631d9556d418e6aaa47611014855050d2c",
+    "invariant_path": "Lutar/Invariant.lean",
+    "repository": "szl-holdings/lutar-lean",
+    "toolchain": "leanprover/lean4:v4.35.0"
+  },
+  "train": {
+    "rows": 160,
+    "sha256": "ebd8836afc19ac2f177a81c2920e64af08747e8698e8966573e323bbf650c9ee"
+  },
+  "training_authority": "NONE"
+}
