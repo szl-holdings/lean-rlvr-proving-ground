@@ -34,6 +34,18 @@ export async function validateSnapshot(v, cryptoAPI=globalThis.crypto) {
   if (actual!==expected) throw Error('RESPONSE_DIGEST_MISMATCH');
   return v;
 }
+export function impactCounts(objects) {
+  if (!Array.isArray(objects)) throw Error('OBJECTS_REQUIRED');
+  let transitions=0, supportLosses=0;
+  for (const x of objects) {
+    if (x.explanation_redacted) continue;
+    if (x.state!==x.scenario_state) {
+      transitions+=1;
+      if (x.state==='SUPPORTED' && x.scenario_state!=='SUPPORTED') supportLosses+=1;
+    }
+  }
+  return {transitions,supportLosses};
+}
 export class SnapshotGate {
   constructor(clock=()=>performance.now()) { this.clock=clock; this.sequence=0; this.value=null; this.deadline=0; }
   begin() { this.sequence+=1; this.value=null; this.deadline=0; return this.sequence; }
@@ -74,7 +86,7 @@ if (typeof document!=='undefined') {
    text('classification','No usable evidence');text('head','Unavailable');text('digest','Unavailable');text('policy','Unavailable');
    for(const id of ['graph','objects','sources','target']) el(id).replaceChildren();
    for(const id of ['simulate','cuts','target']) el(id).disabled=true;
-   text('cut-result','No current evidence. Refresh before inspecting a scenario.');
+   text('cut-result','No current evidence. Refresh before inspecting a scenario.');text('impact-summary','No current hypothetical impact.');
  }
  function svg(tag,attrs={}){const n=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const[k,v]of Object.entries(attrs))n.setAttribute(k,String(v));return n;}
  function renderGraph(objects){
@@ -98,6 +110,8 @@ if (typeof document!=='undefined') {
    for(const x of v.objects){if(x.kind==='source'){const label=document.createElement('label');label.className='source-option';const box=document.createElement('input');box.type='checkbox';box.name='withdraw';box.value=x.id;box.checked=v.scenario.withdraw.includes(x.id);label.append(box,document.createTextNode(x.id));sourceBox.append(label);}else{const o=document.createElement('option');o.value=x.id;o.textContent=x.id;targetBox.append(o);}}
    if(v.scenario.target)targetBox.value=v.scenario.target;
    for(const id of ['simulate','cuts','target'])el(id).disabled=false;
+   const impact=impactCounts(v.objects);
+   text('impact-summary',`${impact.supportLosses} visible supported objects lose support; ${impact.transitions} visible state transitions. Hypothetical only; no ledger mutation.`);
    const cuts=v.scenario.cut_sets;
    text('cut-result',cuts?`${cuts.state} · ${cuts.checks} finite checks\n${cuts.sets.map(s=>s.join(' + ')).join('\n')||'No removal set found in the inspected scope.'}\nSearch complete: ${cuts.search_complete?'yes':'no — bounded result only'}`:'No cut-set search in this response. The scenario is read-only.');
    renderGraph(v.objects);clearTimeout(timer);timer=setTimeout(()=>clear('snapshot expired'),Math.max(0,gate.deadline-performance.now()));
