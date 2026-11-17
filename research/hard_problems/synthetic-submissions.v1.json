@@ -1,0 +1,22 @@
+{
+  "schema": "szl.proving-ground.challenge-submissions/v1",
+  "origin": "SYNTHETIC_CONTROL",
+  "model_revision": null,
+  "submissions": [
+    {
+      "id": "putnam_2025_a5",
+      "action": "ABSTAIN",
+      "text": ""
+    },
+    {
+      "id": "putnam_2025_b6",
+      "action": "CLAIM_PROOF",
+      "text": "by sorry"
+    },
+    {
+      "id": "fc-0066a08071972f4556bc8b6c",
+      "action": "CLAIM_PROOF",
+      "text": "by simp"
+    }
+  ]
+}
