@@ -4,9 +4,41 @@
 
 Estate artifact, fail-closed. Merge to protected mains is owner-gated. Nothing in this repo authorizes a launch.
 
+## Current assurance boundary: review references, not training approval
+
+`PROOF_ACCEPTED` is the legacy verdict name for **elaboration plus exactly one
+axiom report bound to the requested declaration**. Missing, unrelated, duplicate
+or malformed reports are rejected. The receipt binds the trusted statement,
+spliced source, attempt, referee implementation and build output by SHA-256.
+This is not independent proof replay, semantic validation of an informal claim,
+or permission to train, publish or execute a model.
+
+`admission.admit` now requires an exact, separately trusted `expected_chain_head`
+and the controller-owned statement registry. It validates the entire hash chain,
+source identities, statement binding, toolchain, successful lake lane and allowed
+axioms before staging a new immutable **REVIEW_REQUIRED** reference generation.
+Legacy receipts missing those fields must be replayed. Fast-lane observations
+never enter this corpus. An empty eligible set is unavailable, not a pass.
+The references point to attempt receipts, not proof bodies; a separate replayable
+proof store is still required before training-data promotion.
+
+**Untrusted Lean must run in an OS-isolated, credential-free worker.** A temporary
+directory is not a security sandbox, and parsing a printed report is not resistant
+to arbitrary metaprograms forging output. Independent checking and trusted
+statement comparison remain separate required controls. This patch does not
+qualify the referee as a hostile-code execution service.
+
+For Flagship55, use the reviewed source/assumption/negative-control records as
+curriculum candidates only. Keep axioms as assumptions, conjectures as open or
+refuted-as-stated claims, and examples as examples. Preserve the locked-eight
+membership and exact theorem hypotheses. Do not change running Flagship54 or
+admit the private Brain graph to gradients. No budget or launch gate is changed.
+
+See Lean's official [proof-validation guidance](https://lean-lang.org/doc/reference/latest/ValidatingProofs/).
+
 ## What this is
 
-The recorded frontier pattern, built: **generate → Lean kernel referees → train only on accepted traces.** A model attempts proofs of the proving-ground atlas probes; the Lean kernel — not an LLM judge, not a rubric — decides the reward:
+The recorded frontier pattern, built: **generate → Lean kernel referees → train only on accepted traces.** A model attempts proofs of the proving-ground atlas probes; the local elaboration/report observation — not an LLM judge — supplies the provisional reward:
 
 | attempt class | verdict | reward |
 | --- | --- | --- |
@@ -25,8 +57,8 @@ Allowed axiom base: propext, Classical.choice, Quot.sound. Anything else is disc
    - lake: "lake build" in a generated sandbox package — **the kernel-referee acceptance lane**.
 2. **rewards.py** — the honesty-shaped reward table above.
 3. **chains.py** — append-only, hash-chained attempt receipts (chains/attempts.jsonl); every entry carries its sha256 and the previous entry's sha256. Tamper-evident. (Khipu/DSSE signature attachment is a recorded follow-up.)
-4. **admission.py** — corpus-v2 admission gate: **only lake-lane PROOF_ACCEPTED proofs enter corpus v2** (kernel-referee rule, szl-forge PR #746); emits per-probe JSON + a manifest with a total-content sha256.
-5. **grpo_adapter.py** — verl/TRL GRPO-compatible reward function: kernel compile IS the reward.
+4. **admission.py** — stages only target-bound lake-lane observation references after complete chain validation. These are REVIEW_REQUIRED references, not proof bodies or a training-approved corpus. `stage_review.py` provides the pinned offline caller.
+5. **grpo_adapter.py** — bounded text-only provisional reward adapter. Full-batch validation preserves one reward per completion; conversation-shaped trainer outputs need an explicit upstream text adapter.
 6. **selftest.py** — fail-closed referee self-test (accepted / bluff-sorry / build-error / abstain-anchor / axiom-smuggle); writes a measured receipt; CI runs it.
 
 ## Probes
@@ -50,3 +82,33 @@ Allowed axiom base: propext, Classical.choice, Quot.sound. Anything else is disc
 ## Provenance
 
 Estate-native (szl-holdings). Atlas provenance: SZLHOLDINGS/formula-proving-ground (HF dataset), content sha256 recorded in CI receipts. Built 2026-11-15 by the Vibe/dc lane under owner standing delegation.
+
+## Pinned offline migration
+
+Supply both exact file digests and the ledger head retained separately by the
+trusted controller. Never calculate the trust anchor from an untrusted incoming
+ledger and immediately treat it as authorization. The source files must be local
+regular files containing bounded strict JSON/JSONL, without duplicate members,
+non-finite numbers or blank ledger rows.
+
+```sh
+python stage_review.py --ledger ledger.jsonl --ledger-sha256 <exact-file-sha256> \
+  --registry trusted-statements.json --registry-sha256 <exact-file-sha256> \
+  --expected-chain-head <controller-retained-head-sha256> --output new-generation
+```
+
+Exit 0 means a review generation was staged, not that proof terms were replayed
+or a model was trained. Exit 2 means blocked; failure output contains no input
+bodies. Existing generations are never overwritten. Legacy receipts missing
+required bindings must be replayed by an authorized worker, not patched into a
+passing state. No legacy chain is rewritten by this command.
+
+`LeanKernelReward` accepts concrete text/probe lists or tuples of equal nonzero
+length, capped at 256 samples. It snapshots the trusted registry and validates
+all input pairs before the first observer call or ledger write. Duplicate probe
+IDs are allowed for repeated samples; mismatched lengths, unknown late IDs,
+oversized text and nontext completions fail before any side effect. Operational
+failure after a valid batch begins can leave completed receipts; reconcile the
+existing single-writer ledger before retrying. No batch transaction or worker
+isolation is claimed. The underlying chain requires external single-writer
+coordination; this change does not create another writer or scheduler.
