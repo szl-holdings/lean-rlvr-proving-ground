@@ -79,7 +79,11 @@ individually certified as unsolved.** This metadata catalog is not a model
 accuracy result or a training corpus. The three-role Flagship55 Khipu teacher,
 guide and skeptic remain proposed and untrained. The synthetic controls verify
 that abstention is not a proof, a sorry-based claim is rejected and an unsupported
-proof claim is UNVERIFIED. No autonomous dataset admission or new GPU run.
+proof claim is UNVERIFIED. A separate [Putnam 2025 source preflight](research/hard_problems/PUTNAM2025_SOURCE_PREFLIGHT.md)
+independently read back all 12 Lean formalization files and found 18 original
+sorry placeholders and six solution abbreviations. That is source verification,
+not model-quality evaluation or a mathematical proof. No autonomous dataset
+admission or new GPU run.
 
 ## Doctrine alignment
 
