@@ -110,6 +110,9 @@ class ScoreLocalTests(unittest.TestCase):
     def test_all_six_abstentions_are_not_math_correctness(self):
         result = self.summary()
         self.assertEqual(result["observed_cases"], 6)
+        self.assertEqual(result["model_responses_observed"], 6)
+        self.assertEqual(result["receipt_coverage"], 1.0)
+        self.assertEqual(result["behavioural_response_coverage"], 1.0)
         self.assertEqual(result["abstentions"], 6)
         self.assertEqual(result["candidate_proof_text_count"], 0)
         self.assertEqual(result["answered_coverage"], 0.0)
@@ -148,6 +151,30 @@ class ScoreLocalTests(unittest.TestCase):
     def test_missing_case_blocks_full_denominator(self):
         with self.assertRaises(score.catalog_api.Hold):
             self.summary(self.paths[:-1])
+
+    def test_empty_replies_are_receipts_not_behavioral_responses(self):
+        for case in score.CASES:
+            self.alter(case, response="", response_sha256=score.catalog_api.sha256(b""),
+                       classification="NO_RESPONSE")
+        result = self.summary()
+        self.assertEqual(result["observed_cases"], 6)
+        self.assertEqual(result["source_verified_replays"], 6)
+        self.assertEqual(result["receipt_coverage"], 1.0)
+        self.assertEqual(result["no_response"], 6)
+        self.assertEqual(result["model_responses_observed"], 0)
+        self.assertEqual(result["behavioural_response_coverage"], 0.0)
+        self.assertEqual(result["answered_coverage"], 0.0)
+        self.assertEqual(result["selective_risk"], "UNAVAILABLE")
+
+    def test_mixed_empty_and_abstain_response_coverage(self):
+        self.alter(score.CASES[0], response=" \n", response_sha256=score.catalog_api.sha256(b" \n"),
+                   classification="NO_RESPONSE")
+        result = self.summary()
+        self.assertEqual(result["receipt_coverage"], 1.0)
+        self.assertEqual(result["model_responses_observed"], 5)
+        self.assertEqual(result["behavioural_response_coverage"], 5 / 6)
+        self.assertEqual(result["abstentions"], 5)
+        self.assertEqual(result["answered_coverage"], 0.0)
 
     def test_duplicate_file_blocks(self):
         with self.assertRaises(score.catalog_api.Hold):
@@ -260,3 +287,4 @@ class ScoreLocalTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
