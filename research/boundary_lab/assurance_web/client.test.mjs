@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
-import {canonical,validateSnapshot,SnapshotGate,boundedResponseText} from './assurance.mjs';
+import {canonical,validateSnapshot,SnapshotGate,boundedResponseText,impactCounts} from './assurance.mjs';
 async function signed(patch={}) {
  const value={schema:'szl.assurance-surface/v0.3',state:'OBSERVED',data_class:'SYNTHETIC_DEMO',tenant:'research',head:'a'.repeat(64),policy_revision:'b'.repeat(40),observed_at:1000,evaluated_at:1001,valid_until:1031,objects:[{id:'A',kind:'source',revision:'c'.repeat(40),content_sha256:'d'.repeat(64),expires_at:2000,state:'SUPPORTED',scenario_state:'SUPPORTED',explanation_redacted:false,supports:[]}],visible_object_count:1,scenario:{hypothetical:true,withdraw:[],persistent_mutations:0,target:null,cut_sets:null},capabilities:{content_hydration:false,execution:false,training:false,promotion:false},qualifications:{truth_verified:false,production_qualified:false,independent_witness:false},...patch};
  value.snapshot_sha256=[...new Uint8Array(await webcrypto.subtle.digest('SHA-256',new TextEncoder().encode(canonical(value)+'\n')))].map(x=>x.toString(16).padStart(2,'0')).join('');return value;
@@ -29,3 +29,21 @@ test('valid UTF8 streamed response retained',async()=>assert.equal(await bounded
 test('already aborted response rejected',async()=>{const c=new AbortController();c.abort();await assert.rejects(boundedResponseText(new Response('test'),c.signal),/TIMEOUT/);});
 test('stalled body cancelled at deadline',async()=>{const c=new AbortController(),r=new Response(new ReadableStream({start(){}}));const t=setTimeout(()=>c.abort(),10);await assert.rejects(boundedResponseText(r,c.signal),/TIMEOUT/);clearTimeout(t);});
 test('invalid UTF8 rejected',async()=>assert.rejects(boundedResponseText(new Response(new Uint8Array([255])),new AbortController().signal),/encoded|encoding|valid/i));
+
+test('impact accounting separates state change from support loss',()=>{
+ const rows=[
+  {state:'SUPPORTED',scenario_state:'UNSUPPORTED',explanation_redacted:false},
+  {state:'SUPPORTED',scenario_state:'SUPPORTED',explanation_redacted:false},
+  {state:'EXPIRED',scenario_state:'WITHDRAWN',explanation_redacted:false},
+  {state:'SUPPORTED',scenario_state:'UNSUPPORTED',explanation_redacted:true}
+ ];
+ assert.deepEqual(impactCounts(rows),{transitions:2,supportLosses:1});
+});
+test('empty hypothetical withdrawal never invents impact',()=>{
+ assert.deepEqual(impactCounts([
+  {state:'SUPPORTED',scenario_state:'SUPPORTED',explanation_redacted:false}
+ ]),{transitions:0,supportLosses:0});
+});
+test('impact counter rejects malformed object list',()=>{
+ assert.throws(()=>impactCounts(null),/OBJECTS_REQUIRED/);
+});
