@@ -26,6 +26,16 @@ found 18 upstream sorry placeholders, six solution abbreviations and zero
 model evaluations. The real files and detailed readback remain private;
 GitHub contains only the auditable validator, tests and scope documentation.
 
+## Bound local model evaluation path
+
+The [one-shot local model probe](LOCAL_MODEL_PROBE.md) now supports an offline
+source-bound prompt plan and an optional, bounded localhost-only inference
+attempt with exact model digest checks. Its raw prompts/responses are private
+and its classifications are **not mathematical proof scores**. In the initial
+2026-11-17 Goedel A1 attempt, the existing Ollama metadata endpoint timed
+out; **no generated model response was observed**. No restart, remote fallback,
+paid job, model modification or production qualification occurred.
+
 ## Existing first-party Putnam semantic gap
 
 The owner-controlled [Lutar Putnam 2025 A1 file](https://github.com/szl-holdings/lutar-lean/blob/bcfc25badcd73d6b6f013853c1fb8bf384b2e460/Lutar/Putnam/P_A1.lean)
