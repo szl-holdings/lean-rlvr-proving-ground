@@ -112,3 +112,25 @@ failure after a valid batch begins can leave completed receipts; reconcile the
 existing single-writer ledger before retrying. No batch transaction or worker
 isolation is claimed. The underlying chain requires external single-writer
 coordination; this change does not create another writer or scheduler.
+
+
+## Lutar A1–A5 numerical training curriculum (source-bound candidates)
+
+The real canonical Lutar axiom predicates and geometric-mean definition, pinned
+to `szl-holdings/lutar-lean@c2ca813fca00ecf58bcc5f505f2aa4237fbf2481`,
+now have a **first-party synthetic chat/SFT curriculum** under
+[`curriculum/`](./curriculum/README.md). It includes 160 deterministic training
+examples and 80 disjoint, developer-authored diagnostic held-out examples,
+with exact manifest file digests and numerical negative controls. Cases teach
+A1–A5, refutation of unconditional Lambda uniqueness, nonuniform-weight
+permutation limitations, and noncompensatory evidence holds. Python reproduces
+every byte offline, and the existing CI validates the corpus and mathematical
+fixtures without deploying or starting training.
+
+This is a separate **numeric supervised curriculum**, not the Lean
+`PROOF_ACCEPTED` referee/admission path. The datasets, optional exact-JSON
+numeric reward, PR CI, and a structural Forge SFT validation **do not confer
+training authority**, cryptographic signing, independent Lean checking, or
+runtime/production readiness. The existing Forge launch contract still owns
+reviewed rights, immutable Hub dataset/student pins, minimum corpus, sealed
+holdout, cost approval, and any subsequent local training or HF publication.
