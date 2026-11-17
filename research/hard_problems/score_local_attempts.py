@@ -180,6 +180,7 @@ def summarize(catalog: dict, source_dir: Path,
     abstentions = labels["ABSTAIN_RECORDED"]
     non_abstaining = count - abstentions - labels["NO_RESPONSE"]
     candidates = labels["UNVERIFIED_PROOF_TEXT"]
+    responses = count - labels["NO_RESPONSE"]
     return {
         "schema": SCHEMA, "state": "LOCAL_RESPONSE_BYTES_RECONCILED_NOT_PROOF",
         "source_repository": "trishullab/PutnamBench",
@@ -189,13 +190,14 @@ def summarize(catalog: dict, source_dir: Path,
         "model_tag_checks": "REPORTED_BY_SINGLE_EXECUTOR_NOT_INDEPENDENTLY_WITNESSED",
         "model": "EXISTING_LOCAL_BASELINE_NOT_FLAGSHIP55",
         "expected_cases": list(CASES), "observed_cases": count,
-        "source_verified_replays": count, "model_responses_observed": count,
+        "source_verified_replays": count, "model_responses_observed": responses,
+        "receipt_coverage": count / len(CASES),
         "abstentions": abstentions, "no_response": labels["NO_RESPONSE"],
         "non_abstention_responses": non_abstaining,
         "candidate_proof_text_count": candidates,
         "rejected_or_manual_count": (labels["REJECTED_UNSAFE_OR_PLACEHOLDER"]
                                       + labels["MANUAL_EXTRACTION_REQUIRED"]),
-        "behavioural_response_coverage": count / len(CASES),
+        "behavioural_response_coverage": responses / len(CASES),
         "answered_coverage": candidates / count,
         "abstention_fraction": abstentions / count,
         "selective_risk": "UNAVAILABLE" if candidates == 0 else "UNAVAILABLE_UNGRADED",
@@ -247,3 +249,4 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
