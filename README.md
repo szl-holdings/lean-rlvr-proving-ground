@@ -82,8 +82,11 @@ that abstention is not a proof, a sorry-based claim is rejected and an unsupport
 proof claim is UNVERIFIED. A separate [Putnam 2025 source preflight](research/hard_problems/PUTNAM2025_SOURCE_PREFLIGHT.md)
 independently read back all 12 Lean formalization files and found 18 original
 sorry placeholders and six solution abbreviations. That is source verification,
-not model-quality evaluation or a mathematical proof. No autonomous dataset
-admission or new GPU run.
+not model-quality evaluation or a mathematical proof. A [bounded local model
+probe](research/hard_problems/LOCAL_MODEL_PROBE.md) adds immutable-source
+prompts and an existing-Ollama-only inference path; the first live request hit
+a metadata timeout, so real benchmark quality remains UNAVAILABLE. No autonomous
+dataset admission, model restart or new GPU training run.
 
 ## Doctrine alignment
 
