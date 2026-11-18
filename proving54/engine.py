@@ -453,11 +453,28 @@ def _read_session(path: Path) -> dict:
         s.get("training_authority") == "NONE" and s.get("signed") is False,
         "UNAUTHORIZED_SESSION_PROMOTION",
     )
+    official_start = approved_source.START
+    require(
+        s.get("started_at_utc") == official_start.isoformat()
+        and s.get("expires_at_utc") == (official_start + timedelta(hours=54)).isoformat(),
+        "SESSION_WINDOW_NOT_BOUND_TO_SOURCE",
+    )
+    bootstrapped = utc(s.get("bootstrapped_at_utc"))
+    require(
+        official_start <= bootstrapped < official_start + timedelta(hours=1),
+        "SESSION_BOOTSTRAP_NOT_IN_FIRST_CLOCK_HOUR",
+    )
     return s
 
 
 def init_run(output_dir: Path, now: datetime) -> dict:
     registry()
+    current = utc(now)
+    official_start = approved_source.START
+    require(
+        official_start <= current < official_start + timedelta(hours=1),
+        "INITIALIZATION_OUTSIDE_SOURCE_HOUR_ZERO",
+    )
     output_dir = Path(output_dir)
     require(
         output_dir.is_absolute()
@@ -470,10 +487,13 @@ def init_run(output_dir: Path, now: datetime) -> dict:
     )
     staging = Path(tempfile.mkdtemp(prefix=".szl-proving54-", dir=output_dir.parent))
     try:
-        state = fresh_session(now, source_digest=digest(REGISTRY.read_bytes()))
+        state = fresh_session(official_start, source_digest=digest(REGISTRY.read_bytes()))
+        state["bootstrapped_at_utc"] = current.isoformat()
         first = {
             "schema": START_SCHEMA,
-            "time": state["started_at_utc"],
+            "time": current.isoformat(),
+            "window_start": state["started_at_utc"],
+            "bootstrap_observed_at_utc": current.isoformat(),
             "window_end": state["expires_at_utc"],
             "logical_roles": list(ROLE_NAMES),
             "source_registry_sha256": state["source_registry_sha256"],
@@ -616,6 +636,8 @@ def status(root: Path, now: datetime) -> dict:
         "hours_recorded": s["hours_completed"],
         "elapsed_hours": round(elapsed, 2),
         "required_hours": 54,
+        "bootstrap_observed_at_utc": s["bootstrapped_at_utc"],
+        "source_window_start_utc": s["started_at_utc"],
         "all_required_tasks_observed": len(all_seen) == len(TASKS),
         "known_unresolved_tasks": unresolved,
         "all_required_fully_answered": False
