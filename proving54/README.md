@@ -103,6 +103,54 @@ despite passing its little math oracles. The value `five_physical_computers_runn
 false` remains part of its output even if every source test is green.
 No sandbox code is loaded from an untrusted document or model completion.
 
+## One-shot 54-hour local CPU curriculum rehearsal
+
+The source-controlled `proving54/engine.py` and `proving54/cli.py`
+implement a **single-writer, bounded, entirely offline CPU-only**
+rehearsal on one already-authorized operator machine. A distinct logical
+YACHAY/KHIPU/LUTAR/HATUN/CODEX message is emitted for each exact
+first-party test task at every admitted clock hour. A five-feature
+logistic abstention policy receives real standard-library SGD updates
+from **synthetic oracle labels only**, with source and token-level
+confidentiality barriers. This is deliberately not a frontier-model
+training job, a physical GPU mesh, a scientific generalization result,
+or permission for any gradient admission in Forge.
+
+Unlike the historical brainstorm, this runner has **one manifest**:
+`proving54/manifest.json` already signed off by protected GitHub
+source checks. It imports and reuses `proving54/admission.py` to reject
+modified source/rights/clock/worker assertions. It never creates a
+second source-policy authority, scheduler or inference endpoint.
+
+With a fresh, reviewed source checkout and an existing private parent
+directory, a responsible operator may initiate exactly one rehearsal.
+The CLI reads the **actual UTC clock**; it has no `--clock` spoof
+switch. The pure functions accept explicit timestamps for source unit
+tests only. A local run path is exclusive; existing runs are never
+overwritten:
+
+    python proving54/cli.py doctor
+    python proving54/cli.py init --run /private/new-54h-rehearsal
+    python proving54/cli.py tick --run /private/new-54h-rehearsal
+    python proving54/cli.py status --run /private/new-54h-rehearsal
+
+An operator may call `tick` at most once per **consecutive elapsed
+UTC hour**; skipped hours, duplicate hours, source-policy drift, broken
+hash chains or a live single-writer lock cause HOLD. Each receipt
+includes source/previous hashes and exact named tasks, but an unsigned
+SHA-256 chain is **not proof of author identity**. Success in its
+12 regression tests does not grant model deployment authority.
+
+The private hourly steward scheduled outside GitHub may invoke this
+*one-shot* command if the authorized device is connected and the
+source, budget, training and rights gates still hold; it must never
+create another cron/process-loop or skip the unknown state. The
+proofing clock ends after 54 hours, but this CPU exercise cannot
+silently turn the five **unsolved materials** questions into solved
+results, nor certify five physical supercomputers from five roles.
+
+**Training status: NONE.** **Public release: HOLD.**
+
 ## Salad + Massed physical pool: no phantom nodes
 
 At the last authorized Massed provider readback (**2026-11-18 04:51 UTC**),
