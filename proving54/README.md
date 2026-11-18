@@ -1,0 +1,152 @@
+# SZL 54-Hour Five-Role Proving Ground — Source and Admission
+
+**Research clock:** November 18, 2026, 05:05:32 UTC → November 20, 2026,
+11:05:32 UTC. **SOURCE/HARD-GATE STARTED; GPU TRAINING NOT ADMITTED.**
+
+This extends, without changing its authority, the preexisting
+[54-hour Ouroboros curriculum](https://github.com/szl-holdings/szl-gpu-bridge/blob/5d8f6034a84fe37a4116ff9d7cb4a35f7dcbe667/docs/OUROBOROS_CURRICULUM.md):
+0–24 hours constitution/Lean, 24–48 hours code/formulas/papers, 48–54 hours
+proof and evaluation. Five **logical reviewer seats** are YACHAY (teacher),
+KHIPU (rational oracle/receipts), LUTAR (Lean proof referee), HATUN (skeptic,
+data and signer), CODEX (code/receipt builder). They can exchange structured
+evidence and abstentions, but are **not five verified independent physical
+supercomputers or five autonomous LLMs**.
+
+This repository owns the existing `referee.py` + `admission.py`, core-only
+`lake build`, hash-chained `chains.py`, and reviewed proof references.
+Neither this folder nor the hourly steward may replace those owners with an
+unreviewed model-output scorer. An unsigned chain head is **not** a signature
+or a trusted proof by itself. Generated Lean must never be executed outside
+a separately admitted OS-isolated, credential-free worker.
+
+## Verified source pointers, not indiscriminate corpus ingestion
+
+The immutable `manifest.json` references 11 GitHub **source files at
+specific commit and Git blob identities** spanning:
+
+- `lean-rlvr-proving-ground`: exact Probes.lean seed, no extra axioms.
+- `szl-gpu-bridge`: 54h schedule and separate Massed/Salad reservations.
+- `szl-papers`: published paper index and explicit preprint/hypothesis status.
+- `lutar-lean`: **conditional** Theorem U. The reported unconditional
+  Λ uniqueness is **false as stated** under A1–A5; do not upgrade it.
+- `hatun-mcp`: canonical governed gateway, no retired HF publisher.
+- `szl-lake`: owner-controlled receipt store; external trust-head and
+  signer checks distinct from SHA256 hash consistency.
+- `szl-khipu`: exact rational/Lambda examples and advisory, not proven trust.
+- `szl-formulas`: source cookbook software; quarantined executable
+  serialization is never loaded.
+- `szl-forge`: trainer, rights, independent data and GPU-budget admission.
+- `szl-router`: source-only Salad/Massed coexistence advisor, not a scheduler.
+- `a11oy`: separate governed product consumer with current public GPU path
+  still subject to Access and source-fencing evidence.
+
+All source bytes are **POINTER_ONLY_NO_GRADIENTS**. The pointer list does not
+declare that every repository's contents are licensed for derivatives, that
+private data is allowed, or that a paper's theorem statement is proven.
+
+The phrase **“codicies”** has no confirmed distinct canonical SZL repository
+in the sampled source and is retained as an **unresolved source identity**.
+No invented codex is quietly inserted into the training set. The estate-wide
+GitHub census and every repository's ownership still need separately
+reviewed source, privacy, licensing and split policy.
+
+## Historical mathematics and Lean/Lake
+
+The first-party, exact, small arithmetic witnesses below are not copied from
+ancient texts, nor are they proofs of the manuscripts' historiography:
+
+- Egyptian unit fractions and the Horus-Eye 63/64 sum, inspired by
+  [the Rhind Papyrus evidence](https://www.open.edu/openlearn/science-maths-technology/mathematics-statistics/egyptian-mathematics/content-section-1.1.1).
+- Concrete 3–4–5 and 5–12–13 integer squares, plus equality transitivity,
+  inspired by [Euclid's Elements, Book I](https://www.euclids-elements.org/elements/books/bookI/).
+- A finite two-axis Lambda-versus-max counterexample (not the full Lutar
+  conditional theorem, nor a solution to an open conjecture).
+- Signed-governance skepticism: missing external chain head/signer,
+  source rights and incompletely sampled Salad groups must remain HOLD.
+
+`probes/Proving54.lean` adds **10** sorry-free, core-only exact statements
+as an additional default Lake target pinned to Lean 4 v4.35.0.
+`lake build` checks those exact statements, not new scientific claims,
+full Euclidean geometry, all of Mathlib or a model's generated proof.
+The main `lutar-lean` mathlib package is separately source-owned and must
+not have its locked formula membership changed by this project.
+
+## Five real materials challenges remain OPEN
+
+The user previously requested five Discovered Materials open-problem tracks:
+cuprate superconductivity; fabrication-to-electrical interface prediction;
+quantum chemistry speed/accuracy; light-driven matter; and interfacial heat
+transport. Their first-party synthetic Forge task generator exists as a
+candidate, **not an independent scientific solution or a runnable approved
+training job**. Those tasks must not be marked PASS merely because an
+LLM produced plausible text or solved a toy arithmetic question.
+
+The available model scorecard screenshot supplies capability ideas, not
+lawful training material, scores verified for SZL, or hidden benchmark keys.
+Real validation requires independent source-disjoint experiments, per-family
+uncertainty, source copyright/license review, and actual methods/data.
+
+## Local five-role rehearsal
+
+This branch's `proving54/admission.py` reads only its reviewed manifest,
+checks exact 54h source/role/schedule/capacity invariants, and runs **seven
+original arithmetic sanity checks** with 35 structured messages exchanged
+between five simulated reviewer seats. It is a pure Python, standard-library
+exercise—**not LLM training, not remote agent communication, not a GPU job**.
+
+    python proving54/admission.py
+    python -m unittest discover -s tests -p 'test_proving54_admission.py'
+    lake build
+
+The source-only command deliberately returns `release_status: HOLD`
+despite passing its little math oracles. The value `five_physical_computers_running:
+false` remains part of its output even if every source test is green.
+No sandbox code is loaded from an untrusted document or model completion.
+
+## Salad + Massed physical pool: no phantom nodes
+
+At the last authorized Massed provider readback (**2026-11-18 04:51 UTC**),
+the two named nodes were Gate1 **Stopped** and CUDA **Running**. Four
+provider instances were visible, **not five verified independent healthy
+compute hosts**. The approved Salad watcher was in direct-HF fallback
+and did not supply a fresh complete Salad resource census. Earlier desired
+or running container counts cannot establish current trainer-process health.
+
+Five compute roles can become five *physical* workers only with **five
+distinct instance identities, fresh boot/model/disk/VRAM evidence,
+exclusive owners, protected ports, checkpoint durability and a reviewed
+per-resource cost cap**. This project does not start/restart Gate1,
+create Salad paid replicas, move workloads, install SSH keys, alter
+Cloudflare tunnel/Access, weaken role controls, or expose raw GPU ports.
+
+Live training requires the existing Forge student/dataset rights and
+immutable revision acceptance, independently sealed holdout, no collision
+with Flagship54's stop owner, and the separately approved GPU budget.
+Self-generated "dream" output is REVIEW_REQUIRED; only independently
+verified and rights-clean traces may enter a later curated curriculum.
+No continual-learning update can write into production weights.
+
+## The user's “only pass once all is answered” rule
+
+`PASS` requires **all** of the following, not merely a clock expiry:
+54 distinct elapsed hourly receipts with no skipped/duplicated hours;
+source and file pins; kernel proof statements and permitted axioms;
+all required questions either independently proved or explicitly
+refuted by certified counterexample with no unresolved required
+obligations; five real independently verified resource identities;
+authorized spend/trainer owner and checkpoint backups; source-disjoint
+scientific evaluation; current authenticated serving and signer/receipt
+authority; owner release approval. Unknown, withheld, non-computable,
+independently unverified or actually open scientific targets remain
+**HOLD**. Honest abstention can be rewarded for *training behavior* but
+is not a mathematical solution or a production promotion.
+
+An hourly, timeboxed SZL proving-ground steward was separately scheduled
+with 54 occurrences through November 20, 2026. It may run a bounded,
+authorized iteration when the device and source are available; scheduling
+alone does not prove execution. That steward cannot bypass any existing
+trainer, budget, GPU, publisher or service-control gate.
+
+**Current result: source policy and arithmetic proof staging; physical
+five-node mesh, actual 54-hour GPU training, solved grand challenges,
+published models and fully answered closure remain UNVERIFIED/HOLD.**
