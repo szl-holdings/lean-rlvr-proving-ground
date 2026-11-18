@@ -38,5 +38,9 @@ jobs:
           python3 -B -m unittest discover -s tests -p 'test_local_model_probe.py' -v
           python3 -B -m unittest discover -s tests -p 'test_score_local_attempts.py' -v
           python3 -B -m unittest discover -s tests -p 'test_benchmark_exposure.py' -v
+      - name: Five-role 54h source and original Egyptian/Greek math gates (no GPU)
+        run: |
+          python3 -B proving54/admission.py
+          python3 -B -m unittest discover -s tests -p 'test_proving54_admission.py' -v
       - name: Chain integrity check
         run: python3 -c "import chains; result = chains.verify(); print(result); raise SystemExit(0 if result.get('ok') is True else 1)"
