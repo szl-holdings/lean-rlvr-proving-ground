@@ -1,0 +1,218 @@
+{
+  "schema": "szl.proving-ground.54h/v1",
+  "name": "SZL 54-hour five-role scientific-mathematics proving ground",
+  "window": {
+    "start_utc": "2026-11-18T05:05:32Z",
+    "end_utc": "2026-11-20T11:05:32Z",
+    "duration_hours": 54
+  },
+  "phase_boundaries": [
+    {
+      "start_hour": 0,
+      "end_hour": 24,
+      "id": "FOUNDATION",
+      "work": "Kamachikuna, Hatun source policy, Lean/Lake seed, Egyptian fractions and Greek Euclid"
+    },
+    {
+      "start_hour": 24,
+      "end_hour": 48,
+      "id": "SKILLS",
+      "work": "source-registered Khipu, szl-papers, Lutar, formulas/cookbook, Lake, code, five materials challenges"
+    },
+    {
+      "start_hour": 48,
+      "end_hour": 54,
+      "id": "PROOF",
+      "work": "independent Lean checks, counterexamples, source rights, heldout science, capacity and budget admission"
+    }
+  ],
+  "logical_roles": [
+    {
+      "id": "YACHAY",
+      "task": "teach original first-party curriculum and source-disjoint evaluation"
+    },
+    {
+      "id": "KHIPU",
+      "task": "exact fractions, counterexamples and receipt chain integrity"
+    },
+    {
+      "id": "LUTAR",
+      "task": "machine check exact Lean/Lake statements, disclose axiom assumptions"
+    },
+    {
+      "id": "HATUN",
+      "task": "skeptic/refusal, policy/rights/signer and authorization"
+    },
+    {
+      "id": "CODEX",
+      "task": "run reviewed offline tests, source diffs and reproducible receipts"
+    }
+  ],
+  "source_registry": [
+    {
+      "repo": "szl-holdings/lean-rlvr-proving-ground",
+      "commit": "996146229ebcf78e37413e64a05f0245bbd194c3",
+      "path": "probes/Probes.lean",
+      "git_blob": "2cbaf334328ada8ef6f57252176873136d3119c3",
+      "role": "kernel_seed",
+      "allowed_use": "POINTER_ONLY_NO_GRADIENTS",
+      "rights": "REVIEW_REQUIRED"
+    },
+    {
+      "repo": "szl-holdings/szl-gpu-bridge",
+      "commit": "5d8f6034a84fe37a4116ff9d7cb4a35f7dcbe667",
+      "path": "docs/OUROBOROS_CURRICULUM.md",
+      "git_blob": "517ddea3cf52428f3d64a30d4a30d4e07645e9b2",
+      "role": "source_54h_ouroboros",
+      "allowed_use": "POINTER_ONLY_NO_GRADIENTS",
+      "rights": "REVIEW_REQUIRED"
+    },
+    {
+      "repo": "szl-holdings/szl-papers",
+      "commit": "39c228dc3a29c6cfd831d43be6a8531e718692ac",
+      "path": "PAPERS_INDEX.md",
+      "git_blob": "fc10712a26657f7d68333aaddc4414296d678be0",
+      "role": "papers_index_not_model_answers",
+      "allowed_use": "POINTER_ONLY_NO_GRADIENTS",
+      "rights": "REVIEW_REQUIRED"
+    },
+    {
+      "repo": "szl-holdings/lutar-lean",
+      "commit": "80e35f859801d80fce7cf81e4d9b0c8bdf91cfea",
+      "path": "Lutar/Uniqueness/TheoremU.lean",
+      "git_blob": "e9af0175cbd68c633902676b97aea193040fa725",
+      "role": "formal_conditional_lambda_only",
+      "allowed_use": "POINTER_ONLY_NO_GRADIENTS",
+      "rights": "REVIEW_REQUIRED"
+    },
+    {
+      "repo": "szl-holdings/hatun-mcp",
+      "commit": "1cec84742e07c151a34c329ae2fb50dd5f87c7ab",
+      "path": "docs/HATUN_SURFACE_CONTRACT.md",
+      "git_blob": "8635de832d7f7006fca846b93fe417785a63704b",
+      "role": "governed_mcp_not_new_publisher",
+      "allowed_use": "POINTER_ONLY_NO_GRADIENTS",
+      "rights": "REVIEW_REQUIRED"
+    },
+    {
+      "repo": "szl-holdings/szl-lake",
+      "commit": "7e19e7f0d56d98fb78c7af6b9369819edaf37262",
+      "path": "README.md",
+      "git_blob": "455d5c65949bb6f317e3a7ed2b42118b00373550",
+      "role": "receipt_storage_requires_trusted_head",
+      "allowed_use": "POINTER_ONLY_NO_GRADIENTS",
+      "rights": "REVIEW_REQUIRED"
+    },
+    {
+      "repo": "szl-holdings/szl-khipu",
+      "commit": "5a6a3843008906051e7b3289767078cd04d26ac3",
+      "path": "README.md",
+      "git_blob": "24e0a668ca7577a44a5b054e05191055adcbd513",
+      "role": "advisory_lambda_and_receipts",
+      "allowed_use": "POINTER_ONLY_NO_GRADIENTS",
+      "rights": "REVIEW_REQUIRED"
+    },
+    {
+      "repo": "szl-holdings/szl-formulas",
+      "commit": "9c74b29de9c061ac599a7349c079599a3c298af5",
+      "path": "README.md",
+      "git_blob": "26afc2c8e728749e8fa2a4e68c3432c2706dff93",
+      "role": "formula_code_no_unsafe_serialization",
+      "allowed_use": "POINTER_ONLY_NO_GRADIENTS",
+      "rights": "REVIEW_REQUIRED"
+    },
+    {
+      "repo": "szl-holdings/szl-forge",
+      "commit": "249e37a74f26e3bae41323f106be9de8f814cc44",
+      "path": "training/README.md",
+      "git_blob": "be14acb08f2f246b1c312684951de67187f23b08",
+      "role": "training_launch_source_requires_approval",
+      "allowed_use": "POINTER_ONLY_NO_GRADIENTS",
+      "rights": "REVIEW_REQUIRED"
+    },
+    {
+      "repo": "szl-holdings/szl-router",
+      "commit": "26a0bcd568f302d663d0678b5bf5b4dea24a66ae",
+      "path": "docs/SALAD_MASSED_FRONTIER_20261118.md",
+      "git_blob": "e86804c3389cc398c26df359cef04fd9cb9122ff",
+      "role": "coexistence_advisory_not_paid_route",
+      "allowed_use": "POINTER_ONLY_NO_GRADIENTS",
+      "rights": "REVIEW_REQUIRED"
+    },
+    {
+      "repo": "szl-holdings/a11oy",
+      "commit": "5ac8033b0caa8f630f1fe7e68d6b9383fc9c2972",
+      "path": "docs/GOVERNED_ADMISSION_FLOW.md",
+      "git_blob": "3c5e1e79013f6d6d0103f2034d8f0885425c0c17",
+      "role": "consumer_needs_separate_signed_gateway",
+      "allowed_use": "POINTER_ONLY_NO_GRADIENTS",
+      "rights": "REVIEW_REQUIRED"
+    }
+  ],
+  "external_references": [
+    {
+      "id": "R-ANCIENT-EGYPT",
+      "url": "https://www.open.edu/openlearn/science-maths-technology/mathematics-statistics/egyptian-mathematics/content-section-1.1.1",
+      "mode": "REFERENCE_TOPIC_NO_TEXT_COPY"
+    },
+    {
+      "id": "R-ANCIENT-GREEK",
+      "url": "https://www.euclids-elements.org/elements/books/bookI/",
+      "mode": "REFERENCE_TOPIC_NO_TEXT_COPY"
+    },
+    {
+      "id": "R-LEAN-LAKE",
+      "url": "https://lean4.dev/tactics/mathlib/intro",
+      "mode": "TOOLCHAIN_DOCS_NO_CODE_IMPORT"
+    }
+  ],
+  "unresolved_source_aliases": [
+    "codicies"
+  ],
+  "scientific_open_challenges": [
+    "cuprate superconductivity",
+    "interfacial electrical properties",
+    "quantum chemistry speed-accuracy",
+    "light-driven materials",
+    "interfacial thermal transport"
+  ],
+  "output_policy": {
+    "private_receipts": true,
+    "source_pins": true,
+    "signed_receipts": false,
+    "hash_chain_is_signature": false,
+    "automatic_lake_proof_admission": false,
+    "automatic_gradient_admission": false
+  },
+  "physical_capacity": {
+    "five_unique_host_liveness_proved": false,
+    "gate1_last_provider_observation": "STOPPED_2026-11-18T04:51Z",
+    "cuda_last_provider_observation": "RUNNING_2026-11-18T04:51Z",
+    "salad_latest_observer": "DIRECT_HF_FALLBACK_NOT_A_SALAD_CENSUS",
+    "new_gpu_replicas_allowed": 0,
+    "paid_compute_authorized": false
+  },
+  "source_governance": {
+    "trainer_owner": "szl-forge launch_contract.py",
+    "lean_owner": "lean-rlvr-proving-ground referee.py",
+    "publisher_owner": "separately_authorized",
+    "sensitive_data_admitted": false,
+    "official_benchmark_items_in_training": false,
+    "uncertified_lean_executed": false,
+    "model_outputs_promoted_to_training": false
+  },
+  "all_answered_gate": {
+    "hour_count_exactly_54": true,
+    "all_required_cases_covered": true,
+    "zero_unresolved_or_unsupported_claims": true,
+    "independent_lake_review_and_kernel": true,
+    "all_five_hosts_physically_verified": true,
+    "actual_model_training_verified": true,
+    "rights_model_data_budget_admitted": true,
+    "signed_external_receipts_and_checkpoint_backup": true,
+    "heldout_evaluation_independent": true,
+    "owner_release_authorized": true
+  },
+  "release_status": "HOLD_SOURCE_PROPOSAL",
+  "citations_or_proofs_cannot_be_inferred_from_green_ci": true
+}
