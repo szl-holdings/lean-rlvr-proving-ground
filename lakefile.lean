@@ -10,3 +10,10 @@ package leanrlvr where
 @[default_target]
 lean_lib Probes where
   srcDir := "probes"
+
+-- Independent core-only, limited historical arithmetic witnesses. Do not
+-- append these to Lutar's locked theorem list or make GPU/model claims.
+@[default_target]
+lean_lib Proving54 where
+  srcDir := "probes"
+  roots := #[`Proving54]
