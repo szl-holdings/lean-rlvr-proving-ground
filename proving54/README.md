@@ -155,7 +155,7 @@ UTC hour**; skipped hours, duplicate hours, source-policy drift, broken
 hash chains or a live single-writer lock cause HOLD. One missed hour ends
 the run for the CLI: every later `tick` inside the window returns
 `SKIPPED_OR_DUPLICATE_HOUR`, and after the window it returns
-`OUTSIDE_54H_WINDOW`. The CLI cannot fill the gap, but the engine's pure
+`OUTSIDE_54H_WINDOW` and changes nothing on disk. The CLI cannot fill the gap, but the engine's pure
 `tick` accepts any timestamp and each hour record's `at_utc` is
 self-reported and unsigned, so the receipts alone cannot show that a gap was
 not filled in later; that rests on operator procedure.
@@ -164,13 +164,20 @@ The single-writer lock is an OS lock (`msvcrt.locking` on Windows,
 `fcntl.flock` elsewhere) on a file that is never deleted, so a worker that
 dies releases it. A tick writes its hour file before it saves `state.json`;
 if that save fails (`HOUR_WRITTEN_STATE_NOT_COMMITTED`) or the process dies,
-the next tick adopts the uncounted hour file only when it is exactly the next
-link, written inside its own slot, for this source, and lists it in
-`recovered_hours`. Anything else, including a leftover `state.json.temporary`,
-is moved to `quarantine/` and never deleted. Each receipt
+the next tick inside the window adopts the uncounted hour file only when it
+is exactly the next link, written inside its own slot, for this source, and
+lists it in `recovered_hours`; if that commit fails too, the tick holds with
+`ADOPTED_HOUR_NOT_COMMITTED` and the file stays pending. Anything else,
+including a leftover `state.json.temporary`, is moved to `quarantine/` and
+never deleted; committed state is untouched, so the same call can still
+record its own open slot. Hour files must be named exactly `hour-NN.json`:
+a copy such as `hour-01 - Copy.json` holds with `NONCANONICAL_HOUR_FILE`
+and nothing is moved. Renames retry for a few seconds on Windows sharing
+violations, including the `init` rename of its staging folder. Each receipt
 includes source/previous hashes and exact named tasks, but an unsigned
 SHA-256 chain is **not proof of author identity**. Success in its
-28 regression tests does not grant model deployment authority.
+61 regression tests, which CI runs on Linux and Windows, does not grant
+model deployment authority.
 
 The private hourly steward scheduled outside GitHub may invoke this
 *one-shot* command if the authorized device is connected and the
@@ -228,7 +235,10 @@ reviewed runner `proving54/operator/tick54.ps1` is called by one scheduled
 task on the operator laptop at :20 and :50 UTC. It reads the window from the
 pinned manifest, refuses a checkout that is not the expected clean commit,
 may call `init` only during hour zero and `tick` at most once per call, and
-appends one JSON line per call to the ledger beside the run. Scheduling
+appends one JSON line per call to the ledger beside the run. A pending
+uncommitted hour is reported as a retry, not a miss; a run folder that exists
+before the window is refused; and after the window the runner only reads
+the result (`WINDOW_ENDED` for 54 of 54 hours, else `WINDOW_ENDED_INCOMPLETE`). Scheduling
 alone does not prove execution: only the hour files count. No scheduler can
 bypass any existing trainer, budget, GPU, publisher or service-control gate.
 

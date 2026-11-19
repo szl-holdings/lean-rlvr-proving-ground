@@ -515,7 +515,7 @@ def init_run(output_dir: Path, now: datetime) -> dict:
         (staging / "bootstrap.json").write_bytes(packed(first))
         (staging / "state.json").write_bytes(packed(state))
         (staging / "hours").mkdir()
-        os.replace(staging, output_dir)
+        _replace_with_retry(staging, output_dir, give_up=output_dir.exists)
         return first
     finally:
         if staging.exists():
@@ -524,8 +524,28 @@ def init_run(output_dir: Path, now: datetime) -> dict:
             shutil.rmtree(staging)
 
 
+def _replace_with_retry(source: Path, target: Path, give_up=lambda: False) -> None:
+    # Windows refuses a rename while another process (a scanner or an indexer)
+    # holds a file without FILE_SHARE_DELETE; that clears within seconds.
+    for attempt in range(8):
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            if attempt == 7 or give_up():
+                raise
+            time.sleep(0.05 * (2**attempt))
+
+
 def _hour_files(root: Path) -> list:
-    return sorted((root / "hours").glob("hour-*.json"))
+    files = sorted((root / "hours").glob("hour-*.json"))
+    # Explorer and sync clients copy a file as "hour-01 - Copy.json", which sorts
+    # before the original; only exact names can be links in the chain.
+    require(
+        [p.name for p in files] == [f"hour-{i:02d}.json" for i in range(len(files))],
+        "NONCANONICAL_HOUR_FILE",
+    )
+    return files
 
 
 def _verify_chain(files: list, head) -> list:
@@ -561,16 +581,7 @@ def _atomic_write(path: Path, bytestring: bytes) -> None:
             stream.write(bytestring)
             stream.flush()
             os.fsync(stream.fileno())
-        # Windows refuses a replace while another process (a scanner or an
-        # indexer) holds the target without FILE_SHARE_DELETE; that clears fast.
-        for attempt in range(6):
-            try:
-                os.replace(temp, path)
-                return
-            except PermissionError:
-                if attempt == 5:
-                    raise
-                time.sleep(0.05 * (2**attempt))
+        _replace_with_retry(temp, path)
     except BaseException:
         with contextlib.suppress(OSError):
             temp.unlink()
@@ -611,18 +622,19 @@ def _single_writer(root: Path):
         os.close(fd)
 
 
-def _adopt_uncommitted_hour(root: Path, state: dict) -> dict:
+def _adopt_uncommitted_hour(root: Path, state: dict) -> tuple:
     """Roll forward one receipt that a tick wrote but could not commit.
 
     A tick fsyncs hour-N before it saves state.json, so a failed or killed save
     leaves hour-N on disk uncounted. Adopt it only when it is exactly the next
     link, written inside its own slot, for this source; anything else goes to
-    quarantine/ and the call holds. Adopted hours are listed in recovered_hours.
+    quarantine/. Committed state is untouched by a quarantine, so the same call
+    may still record its own open slot. Adopted hours are in recovered_hours.
     """
     files = _hour_files(root)
     n = state["hours_completed"]
     if len(files) != n + 1:
-        return state
+        return state, "NONE"
     _verify_chain(files[:n], state["chain_head_sha256"])
     orphan = files[-1]
     raw = orphan.read_bytes()
@@ -652,15 +664,18 @@ def _adopt_uncommitted_hour(root: Path, state: dict) -> dict:
         valid = False
     if not valid:
         _quarantine(root, orphan, raw)
-        raise Hold("UNCOMMITTED_HOUR_QUARANTINED")
+        return state, "QUARANTINED"
     state["chain_head_sha256"] = digest(raw)
     state["hours_completed"] = n + 1
     state["last_hour"] = n
     state["phase"] = record["phase"]
     state["toy_cpu_policy_weights"] = weights
     state["recovered_hours"] = list(state.get("recovered_hours", [])) + [n]
-    _atomic_write(root / "state.json", packed(state))
-    return state
+    try:
+        _atomic_write(root / "state.json", packed(state))
+    except OSError:
+        raise Hold("ADOPTED_HOUR_NOT_COMMITTED") from None
+    return state, "ADOPTED"
 
 
 def tick(root: Path, now: datetime) -> dict:
@@ -676,17 +691,18 @@ def tick(root: Path, now: datetime) -> dict:
         "RUN_COPY_SOURCE_DRIFT",
     )
     with _single_writer(root):
+        state = _read_session(root / "state.json")
+        start = utc(state["started_at_utc"])
+        deadline = utc(state["expires_at_utc"])
+        # Nothing on disk changes outside the window, not even a roll-forward.
+        require(start <= current < deadline, "OUTSIDE_54H_WINDOW")
         temp = root / "state.json.temporary"
         if temp.exists():
             # Left by an earlier call that died mid-save; state.json is the
             # committed copy, so the leftover is moved aside, not trusted.
             _quarantine(root, temp, temp.read_bytes())
-        state = _read_session(root / "state.json")
-        state = _adopt_uncommitted_hour(root, state)
+        state, recovery = _adopt_uncommitted_hour(root, state)
         _read_events(root, state)
-        start = utc(state["started_at_utc"])
-        deadline = utc(state["expires_at_utc"])
-        require(start <= current < deadline, "OUTSIDE_54H_WINDOW")
         slot = int((current - start).total_seconds() // 3600)
         require(0 <= slot < 54, "HOUR_OUTSIDE_WINDOW")
         require(slot == state["hours_completed"], "SKIPPED_OR_DUPLICATE_HOUR")
@@ -729,6 +745,7 @@ def tick(root: Path, now: datetime) -> dict:
             "needs_external_evidence_count": ev["requires_external_count"],
             "toy_policy_sgd_updates": ev["toy_cpu_learning"]["iterations"],
             "hours_recorded": state["hours_completed"],
+            "uncommitted_hour": recovery,
             "chain_head_sha256": state["chain_head_sha256"],
             "gpu_jobs_started": 0,
             "deployment_authorized": False,

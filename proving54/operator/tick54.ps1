@@ -31,7 +31,7 @@ $Utf8   = New-Object System.Text.UTF8Encoding($false)
 $IsoFmt = "yyyy-MM-dd'T'HH:mm:ss'Z'"
 # Engine reasons worth one more try in the same hour; anything else needs a person.
 $Retryable = @('ANOTHER_WORKER_OWNS_THIS_RUN', 'HOUR_WRITTEN_STATE_NOT_COMMITTED',
-    'UNCOMMITTED_HOUR_QUARANTINED', 'PermissionError', 'OSError', 'FileExistsError',
+    'ADOPTED_HOUR_NOT_COMMITTED', 'PermissionError', 'OSError', 'FileExistsError',
     'BlockingIOError', 'TimeoutError', 'InterruptedError')
 
 function Out-Record($Record) {
@@ -44,12 +44,15 @@ function Invoke-Native([string]$Exe, [string[]]$Argv) {
     $saved = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        $text = (& $Exe @Argv 2>&1 | Out-String).Trim()
+        $items = @(& $Exe @Argv 2>&1)
         $code = $LASTEXITCODE
     } finally {
         $ErrorActionPreference = $saved
     }
-    return [ordered]@{ rc = $code; out = $text }
+    # Stderr lines arrive as ErrorRecords; keep them apart so they never corrupt stdout JSON.
+    $out = @($items | Where-Object { $_ -isnot [System.Management.Automation.ErrorRecord] } | ForEach-Object { [string]$_ })
+    $err = @($items | Where-Object { $_ -is [System.Management.Automation.ErrorRecord] } | ForEach-Object { [string]$_.Exception.Message })
+    return [ordered]@{ rc = $code; out = ($out -join "`n").Trim(); err = ($err -join "`n").Trim() }
 }
 
 function Read-Json([string]$Text) {
@@ -65,8 +68,10 @@ function Get-Field($Object, [string]$Name) {
 
 function As-Evidence($Result) {
     $parsed = Read-Json $Result.out
-    if ($null -ne $parsed) { return [ordered]@{ rc = $Result.rc; json = $parsed } }
-    return [ordered]@{ rc = $Result.rc; text = $Result.out }
+    if ($null -ne $parsed) { $ev = [ordered]@{ rc = $Result.rc; json = $parsed } }
+    else { $ev = [ordered]@{ rc = $Result.rc; text = $Result.out } }
+    if ($Result.err) { $ev.err = $Result.err }
+    return $ev
 }
 
 function Get-Moment($Value) {
@@ -128,7 +133,7 @@ if ($pyv.rc -ne 0) {
 $head  = Invoke-Native 'git' @('-C', $Src, 'rev-parse', 'HEAD')
 $dirty = Invoke-Native 'git' @('-C', $Src, 'status', '--porcelain', '--untracked-files=all')
 $rec.head = $head.out
-if ($head.rc -ne 0 -or $head.out -ne $ExpectedHead -or $dirty.rc -ne 0 -or $dirty.out) {
+if ($head.rc -ne 0 -or $head.out -ne $ExpectedHead -or $head.err -or $dirty.rc -ne 0 -or $dirty.out -or $dirty.err) {
     $rec.result = 'SKIP_SOURCE_DRIFT'; $rec.next = 'NEEDS_OPERATOR'; Out-Record $rec; exit 6
 }
 
@@ -145,19 +150,36 @@ $rec.window_end = $End.ToString($IsoFmt, $Inv)
 $slot = Get-Slot $now $Start
 $rec.slot = $slot
 
+# A run folder that exists before the window would make every hour-zero firing
+# skip init, so the dry run and the early firings both refuse it.
+$staleRun = ($now -lt $Start) -and (Test-Path -LiteralPath $Run)
 if ($Check) {
     $doctor = Invoke-Native $Python @('-I', '-B', '-X', 'utf8', $Cli, 'doctor')
     $rec.doctor = As-Evidence $doctor
-    if ($doctor.rc -eq 0) { $rec.result = 'CHECK_OK' } else { $rec.result = 'CHECK_FAILED' }
-    $rec.next = 'WAIT'; Out-Record $rec
-    if ($doctor.rc -eq 0) { exit 0 } else { exit 13 }
+    $rec.next = 'WAIT'
+    if ($staleRun) { $rec.result = 'CHECK_RUN_PATH_EXISTS'; $rec.next = 'NEEDS_OPERATOR' }
+    elseif ($doctor.rc -eq 0) { $rec.result = 'CHECK_OK' }
+    else { $rec.result = 'CHECK_FAILED'; $rec.next = 'NEEDS_OPERATOR' }
+    Out-Record $rec
+    if ($rec.result -eq 'CHECK_OK') { exit 0 } else { exit 13 }
+}
+if ($staleRun) {
+    $rec.result = 'RUN_PATH_EXISTS_BEFORE_WINDOW'; $rec.next = 'NEEDS_OPERATOR'; Out-Record $rec; exit 16
 }
 if ($now -lt $Start) {
     $rec.result = 'SKIP_BEFORE_WINDOW'; $rec.next = 'WAIT'; Out-Record $rec; exit 4
 }
 if ($now -ge $End) {
-    if (Test-Path -LiteralPath $Run) { $rec.status = As-Evidence (Invoke-Cli 'status') }
-    $rec.result = 'WINDOW_ENDED'; $rec.next = 'STOP'; Out-Record $rec; exit 0
+    # The engine changes nothing after the window, so this only reads the outcome.
+    $rec.result = 'WINDOW_ENDED_INCOMPLETE'; $rec.next = 'STOP'
+    if (Test-Path -LiteralPath $Run) {
+        $final = Invoke-Cli 'status'
+        $rec.status = As-Evidence $final
+        $done = Get-Field (Read-Json $final.out) 'hours_recorded'
+        if ($null -ne $done -and [int]$done -ge 54) { $rec.result = 'WINDOW_ENDED' }
+    }
+    Out-Record $rec
+    if ($rec.result -eq 'WINDOW_ENDED') { exit 0 } else { exit 15 }
 }
 
 if (-not (Test-Path -LiteralPath $Run)) {
@@ -182,7 +204,11 @@ $status = Invoke-Cli 'status'
 $rec.tick   = As-Evidence $tick
 $rec.status = As-Evidence $status
 if ($tick.rc -ne 0) { $rec.tick_reason = [string](Get-Field (Read-Json $tick.out) 'reason') }
-$hours = Get-Field (Read-Json $status.out) 'hours_recorded'
+$st = Read-Json $status.out
+$hours = Get-Field $st 'hours_recorded'
+# An hour written inside its own slot but not committed is adopted by the next
+# tick (engine._adopt_uncommitted_hour), so it is not a miss yet.
+$pending = (Get-Field $st 'uncommitted_hour_pending') -eq $true
 # The engine reads its own clock after Python starts; judge against both reads.
 $slotAfter = Get-Slot ([DateTimeOffset]::UtcNow) $Start
 $rec.slot_after = $slotAfter
@@ -192,17 +218,25 @@ if ($null -eq $hours) {
 }
 $hours = [int]$hours
 if ($hours -eq ($slot + 1) -or $hours -eq ($slotAfter + 1)) {
-    if ($tick.rc -eq 0) { $rec.result = 'HOUR_RECORDED' } else { $rec.result = 'HOUR_ALREADY_RECORDED' }
+    if ($tick.rc -eq 0) { $rec.result = 'HOUR_RECORDED' }
+    elseif (@('SKIPPED_OR_DUPLICATE_HOUR', 'ANOTHER_WORKER_OWNS_THIS_RUN') -contains $rec.tick_reason) {
+        $rec.result = 'HOUR_ALREADY_RECORDED'
+    } else {
+        # This hour counts, but the refusal can block the next one; flag it now.
+        $rec.result = 'HOUR_COUNTED_TICK_HOLD'
+        if ($Retryable -contains $rec.tick_reason) { $rec.next = 'RETRY_THIS_HOUR' } else { $rec.next = 'NEEDS_OPERATOR' }
+        Out-Record $rec; exit 11
+    }
     if ($hours -ge 54) { $rec.next = 'COMPLETE' } else { $rec.next = 'CONTINUE' }
     Out-Record $rec; exit 0
 }
-if ($hours -lt $slot) {
+if (($hours + [int]$pending) -lt $slotAfter) {
     $rec.result = 'RUN_ENDED_MISSED_HOUR'; $rec.next = 'STOP'; Out-Record $rec; exit 10
 }
-if ($hours -eq $slot) {
+if ($hours -le $slotAfter) {
     $rec.result = 'TICK_HOLD'
     if ($rec.tick_reason -eq 'OUTSIDE_54H_WINDOW') { $rec.next = 'STOP' }
-    elseif ($Retryable -contains $rec.tick_reason) { $rec.next = 'RETRY_THIS_HOUR' }
+    elseif ($pending -or ($Retryable -contains $rec.tick_reason)) { $rec.next = 'RETRY_THIS_HOUR' }
     else { $rec.next = 'NEEDS_OPERATOR' }
     Out-Record $rec; exit 11
 }
