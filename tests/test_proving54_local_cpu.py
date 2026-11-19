@@ -752,5 +752,402 @@ class OperatorRunnerTests(unittest.TestCase):
         self.assertIn("'uncommitted_hour_pending'", text)
 
 
+def _orphan_hour_one(root: Path, tick_at: timedelta = timedelta(hours=1, minutes=5)) -> bytes:
+    """Run hours 0 and 1 with hour 1's state save failing; return the orphan bytes."""
+    pg.init_run(root, AT)
+    pg.tick(root, AT + timedelta(minutes=5))
+    with _failing_saves(), contextlib.suppress(pg.Hold):
+        pg.tick(root, AT + tick_at)
+    return (root / "hours" / "hour-01.json").read_bytes()
+
+
+class AdoptionBoundTests(unittest.TestCase):
+    """Roll-forward adopts only a receipt the engine itself would have written."""
+
+    def adopt_attempt(self, root: Path, raw: bytes, when: timedelta):
+        (root / "hours" / "hour-01.json").write_bytes(raw)
+        return pg.tick(root, AT + when)
+
+    def test_valid_looking_receipt_with_a_forged_episode_is_quarantined(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            real = _orphan_hour_one(root)
+            forged = pg.strict_load(real)
+            forged["episode"]["verified_toy_count"] += 1
+            raw = pg.packed(forged)
+            self.assertNotEqual(raw, real)
+            out = self.adopt_attempt(root, raw, timedelta(hours=1, minutes=35))
+            self.assertEqual((out["hour"], out["uncommitted_hour"]), (1, "QUARANTINED"))
+            self.assertEqual(
+                [x.read_bytes() for x in (root / "quarantine").glob("hour-01.json.*")], [raw]
+            )
+            st = pg.status(root, AT + timedelta(hours=1, minutes=36))
+            self.assertEqual((st["hours_recorded"], st["recovered_hours"]), (2, []))
+
+    def test_same_content_in_another_byte_layout_is_quarantined(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            real = _orphan_hour_one(root)
+            raw = json.dumps(pg.strict_load(real), indent=2).encode()
+            out = self.adopt_attempt(root, raw, timedelta(hours=1, minutes=35))
+            self.assertEqual(out["uncommitted_hour"], "QUARANTINED")
+
+    def test_receipt_stamped_in_the_future_is_quarantined(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            real = _orphan_hour_one(root, timedelta(hours=1, minutes=50))
+            # The clock now reads earlier than the receipt claims.
+            out = self.adopt_attempt(root, real, timedelta(hours=1, minutes=20))
+            self.assertEqual(out["uncommitted_hour"], "QUARANTINED")
+
+    def test_hour_zero_receipt_from_before_the_bootstrap_is_quarantined(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            pg.init_run(root, AT + timedelta(minutes=30))
+            with _failing_saves(), self.assertRaisesRegex(pg.Hold, "HOUR_WRITTEN_STATE_NOT_COMMITTED"):
+                pg.tick(root, AT + timedelta(minutes=40))
+            path = root / "hours" / "hour-00.json"
+            early = pg.strict_load(path.read_bytes())
+            early["at_utc"] = (AT + timedelta(minutes=10)).isoformat()
+            path.write_bytes(pg.packed(early))
+            out = pg.tick(root, AT + timedelta(minutes=50))
+            self.assertEqual((out["hour"], out["uncommitted_hour"]), (0, "QUARANTINED"))
+
+    def test_an_engine_written_receipt_is_still_adopted(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            real = _orphan_hour_one(root)
+            with self.assertRaisesRegex(pg.Hold, "SKIPPED_OR_DUPLICATE_HOUR") as held:
+                pg.tick(root, AT + timedelta(hours=1, minutes=35))
+            self.assertEqual(held.exception.adopted_hour, 1)
+            self.assertEqual((root / "hours" / "hour-01.json").read_bytes(), real)
+            st = pg.status(root, AT + timedelta(hours=1, minutes=36))
+            self.assertEqual((st["hours_recorded"], st["recovered_hours"]), (2, [1]))
+
+    def test_receipt_stamped_exactly_now_is_adopted(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            _orphan_hour_one(root, timedelta(hours=1, minutes=5))
+            with self.assertRaisesRegex(pg.Hold, "SKIPPED_OR_DUPLICATE_HOUR") as held:
+                pg.tick(root, AT + timedelta(hours=1, minutes=5))
+            self.assertEqual(held.exception.adopted_hour, 1)
+
+    def test_hour_zero_receipt_stamped_exactly_at_the_bootstrap_is_adopted(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            pg.init_run(root, AT + timedelta(minutes=30))
+            with _failing_saves(), self.assertRaisesRegex(pg.Hold, "HOUR_WRITTEN_STATE_NOT_COMMITTED"):
+                pg.tick(root, AT + timedelta(minutes=30))
+            with self.assertRaisesRegex(pg.Hold, "SKIPPED_OR_DUPLICATE_HOUR") as held:
+                pg.tick(root, AT + timedelta(minutes=31))
+            self.assertEqual(held.exception.adopted_hour, 0)
+
+    def test_a_hold_without_an_adoption_carries_no_adopted_hour(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            pg.init_run(root, AT)
+            pg.tick(root, AT + timedelta(minutes=5))
+            with self.assertRaisesRegex(pg.Hold, "SKIPPED_OR_DUPLICATE_HOUR") as held:
+                pg.tick(root, AT + timedelta(minutes=20))
+            self.assertFalse(hasattr(held.exception, "adopted_hour"))
+
+    def test_cli_reports_an_adoption_that_ended_in_a_hold(self):
+        from proving54 import cli
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            _orphan_hour_one(root)
+            seen = AT + timedelta(hours=1, minutes=35)
+
+            class Clock(datetime):
+                @classmethod
+                def now(cls, tz=None):
+                    return seen
+
+            out = io.StringIO()
+            with mock.patch.object(cli, "datetime", Clock), contextlib.redirect_stdout(out):
+                rc = cli.main(["tick", "--run", str(root)])
+            self.assertEqual(rc, 2)
+            self.assertEqual(
+                json.loads(out.getvalue()),
+                {
+                    "result": "HOLD",
+                    "reason": "SKIPPED_OR_DUPLICATE_HOUR",
+                    "adopted_uncommitted_hour": 1,
+                },
+            )
+
+    def test_a_plain_hold_keeps_its_exact_cli_shape(self):
+        from proving54 import cli
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            pg.init_run(root, AT)
+            seen = AT + timedelta(hours=54, minutes=1)
+
+            class Clock(datetime):
+                @classmethod
+                def now(cls, tz=None):
+                    return seen
+
+            out = io.StringIO()
+            with mock.patch.object(cli, "datetime", Clock), contextlib.redirect_stdout(out):
+                self.assertEqual(cli.main(["tick", "--run", str(root)]), 2)
+            self.assertEqual(
+                json.loads(out.getvalue()),
+                {"result": "HOLD", "reason": "OUTSIDE_54H_WINDOW"},
+            )
+
+
+class AdoptionDurabilityTests(unittest.TestCase):
+    def test_adopted_receipt_is_flushed_before_state_names_it(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            _orphan_hour_one(root)
+            orphan = root / "hours" / "hour-01.json"
+            seen = []
+            real_fsync, real_atomic = os.fsync, pg._atomic_write
+
+            def spy_fsync(fd):
+                seen.append(("fsync", os.fstat(fd).st_ino == orphan.stat().st_ino))
+                return real_fsync(fd)
+
+            def spy_atomic(path, data):
+                seen.append(("state", path.name))
+                return real_atomic(path, data)
+
+            with mock.patch("proving54.engine.os.fsync", side_effect=spy_fsync), mock.patch.object(
+                pg, "_atomic_write", side_effect=spy_atomic
+            ), self.assertRaisesRegex(pg.Hold, "SKIPPED_OR_DUPLICATE_HOUR"):
+                pg.tick(root, AT + timedelta(hours=1, minutes=35))
+            self.assertEqual(seen[0], ("fsync", True))
+            self.assertIn(("state", "state.json"), seen)
+            self.assertLess(seen.index(("fsync", True)), seen.index(("state", "state.json")))
+
+    def test_unflushable_receipt_is_not_named_by_state_and_is_kept(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            real = _orphan_hour_one(root)
+            committed = (root / "state.json").read_bytes()
+            with mock.patch.object(pg, "_flush_file", side_effect=OSError(5, "I/O error")):
+                with self.assertRaisesRegex(pg.Hold, "ADOPTED_HOUR_NOT_COMMITTED"):
+                    pg.tick(root, AT + timedelta(hours=1, minutes=35))
+            self.assertEqual((root / "state.json").read_bytes(), committed)
+            self.assertEqual((root / "hours" / "hour-01.json").read_bytes(), real)
+            self.assertFalse((root / "quarantine").exists())
+            with self.assertRaisesRegex(pg.Hold, "SKIPPED_OR_DUPLICATE_HOUR"):
+                pg.tick(root, AT + timedelta(hours=1, minutes=40))
+            self.assertEqual(pg.status(root, AT + timedelta(hours=1, minutes=41))["recovered_hours"], [1])
+
+    def test_flush_retries_a_reader_that_refuses_write_access(self):
+        calls = {"n": 0}
+
+        def flaky(path):
+            calls["n"] += 1
+            if calls["n"] <= 2:
+                raise PermissionError("a status reader holds the file")
+
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "hour-01.json"
+            target.write_bytes(b"x")
+            with mock.patch.object(pg, "_fsync_path", side_effect=flaky), mock.patch(
+                "proving54.engine.time.sleep"
+            ) as slept:
+                pg._flush_file(target)
+            self.assertEqual((calls["n"], slept.call_count), (3, 2))
+            with mock.patch.object(
+                pg, "_fsync_path", side_effect=PermissionError("held")
+            ), mock.patch("proving54.engine.time.sleep"), self.assertRaises(PermissionError):
+                pg._flush_file(target)
+
+    def test_flush_really_syncs_a_real_file(self):
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "hour-01.json"
+            target.write_bytes(b"x")
+            with mock.patch(
+                "proving54.engine.os.fsync", side_effect=os.fsync
+            ) as spy:
+                pg._flush_file(target)
+            self.assertEqual(spy.call_count, 1)
+
+
+class FinalHourTests(unittest.TestCase):
+    """Hour 53 has no later slot, so only a retry inside the hour can adopt it."""
+
+    def orphan_final_hour(self, root: Path):
+        pg.init_run(root, AT)
+        with mock.patch("proving54.engine.time.sleep"):
+            for h in range(53):
+                pg.tick(root, AT + timedelta(hours=h, minutes=5))
+            with _failing_saves(), self.assertRaisesRegex(pg.Hold, "HOUR_WRITTEN_STATE_NOT_COMMITTED"):
+                pg.tick(root, AT + timedelta(hours=53, minutes=5))
+
+    def test_retry_inside_hour_53_adopts_it_and_completes_the_run(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            self.orphan_final_hour(root)
+            self.assertTrue(pg.status(root, AT + timedelta(hours=53, minutes=6))["uncommitted_hour_pending"])
+            with self.assertRaisesRegex(pg.Hold, "SKIPPED_OR_DUPLICATE_HOUR") as held:
+                pg.tick(root, AT + timedelta(hours=53, minutes=35))
+            self.assertEqual(held.exception.adopted_hour, 53)
+            st = pg.status(root, AT + timedelta(hours=53, minutes=36))
+            self.assertEqual((st["hours_recorded"], st["recovered_hours"]), (54, [53]))
+            self.assertFalse(st["uncommitted_hour_pending"])
+            with self.assertRaisesRegex(pg.Hold, "OUTSIDE_54H_WINDOW"):
+                pg.tick(root, AT + timedelta(hours=54, minutes=1))
+
+    def test_after_the_window_hour_53_stays_uncommitted_and_nothing_moves(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            self.orphan_final_hour(root)
+            before = {p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+            with self.assertRaisesRegex(pg.Hold, "OUTSIDE_54H_WINDOW"):
+                pg.tick(root, AT + timedelta(hours=54, minutes=1))
+            after = {p.relative_to(root): p.read_bytes() for p in root.rglob("*") if p.is_file()}
+            self.assertEqual(after, before)
+            st = pg.status(root, AT + timedelta(hours=54, minutes=2))
+            self.assertEqual((st["hours_recorded"], st["uncommitted_hour_pending"]), (53, True))
+
+    def test_a_torn_hour_53_receipt_is_quarantined_and_the_retry_records_the_hour(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            self.orphan_final_hour(root)
+            (root / "hours" / "hour-53.json").write_bytes(b'{"hour": 53, "torn')
+            out = pg.tick(root, AT + timedelta(hours=53, minutes=35))
+            self.assertEqual((out["hour"], out["uncommitted_hour"], out["hours_recorded"]), (53, "QUARANTINED", 54))
+
+
+class FakeMsvcrt:
+    """Records the calls the engine makes, and fails a lock held elsewhere."""
+
+    LK_NBLCK, LK_UNLCK = 2, 0
+
+    def __init__(self, held=False):
+        self.calls, self.held = [], held
+
+    def locking(self, fd, mode, nbytes):
+        self.calls.append((mode, nbytes, os.lseek(fd, 0, os.SEEK_CUR)))
+        if mode == self.LK_NBLCK and self.held:
+            raise OSError(36, "Resource deadlock avoided")
+
+
+class WriterLockTests(unittest.TestCase):
+    def test_two_writers_on_one_run_exclude_each_other(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            pg.init_run(root, AT)
+            with pg._single_writer(root):
+                with self.assertRaisesRegex(pg.Hold, "ANOTHER_WORKER_OWNS_THIS_RUN"):
+                    with pg._single_writer(root):
+                        self.fail("a second writer got in")
+                self.assertFalse((root / "hours" / "hour-00.json").exists())
+            with pg._single_writer(root):
+                pass
+
+    def test_a_failing_tick_releases_the_lock(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            pg.init_run(root, AT)
+            with self.assertRaisesRegex(pg.Hold, "OUTSIDE_54H_WINDOW"):
+                pg.tick(root, AT + timedelta(hours=60))
+            self.assertEqual(pg.tick(root, AT + timedelta(minutes=5))["hour"], 0)
+
+    def test_windows_branch_follows_the_msvcrt_protocol(self):
+        # MODELED: a stand-in for msvcrt on any OS; the real call is exercised
+        # by the proving54-windows CI job and the operator laptop.
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            root.mkdir()
+            fake = FakeMsvcrt()
+            with mock.patch.object(pg, "msvcrt", fake, create=True), mock.patch(
+                "proving54.engine.os.name", "nt"
+            ):
+                with pg._single_writer(root):
+                    self.assertEqual(fake.calls, [(FakeMsvcrt.LK_NBLCK, 1, 0)])
+                self.assertEqual(
+                    fake.calls, [(FakeMsvcrt.LK_NBLCK, 1, 0), (FakeMsvcrt.LK_UNLCK, 1, 0)]
+                )
+                busy = FakeMsvcrt(held=True)
+            with mock.patch.object(pg, "msvcrt", busy, create=True), mock.patch(
+                "proving54.engine.os.name", "nt"
+            ):
+                with self.assertRaisesRegex(pg.Hold, "ANOTHER_WORKER_OWNS_THIS_RUN"):
+                    with pg._single_writer(root):
+                        self.fail("entered a lock held elsewhere")
+                self.assertEqual(busy.calls, [(FakeMsvcrt.LK_NBLCK, 1, 0)])
+
+
+@unittest.skipUnless(hasattr(os, "fork") and os.name == "posix", "needs fork and SIGKILL semantics")
+class KilledWriterTests(unittest.TestCase):
+    """A real child process dies at a chosen point in a tick; the next call recovers."""
+
+    def kill_tick_at(self, root: Path, when: timedelta, point: str) -> None:
+        pid = os.fork()
+        if pid == 0:  # child
+            code = 1
+            try:
+                real_fsync = os.fsync
+
+                def dying_fsync(fd):
+                    if point == "torn_receipt" and Path(os.readlink(f"/proc/self/fd/{fd}") if os.path.exists("/proc/self/fd") else "").name.startswith("hour-"):
+                        os.ftruncate(fd, os.fstat(fd).st_size // 2)
+                        os._exit(9)
+                    return real_fsync(fd)
+
+                def dying_atomic(path, data):
+                    os._exit(9)
+
+                if point == "before_state_commit":
+                    pg._atomic_write = dying_atomic
+                else:
+                    os.fsync = dying_fsync
+                pg.tick(root, AT + when)
+                code = 0
+            finally:
+                os._exit(code)
+        _, status = os.waitpid(pid, 0)
+        self.assertEqual(os.WEXITSTATUS(status), 9)
+
+    def test_kill_after_the_receipt_before_the_state_commit(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            pg.init_run(root, AT)
+            pg.tick(root, AT + timedelta(minutes=5))
+            self.kill_tick_at(root, timedelta(hours=1, minutes=5), "before_state_commit")
+            st = pg.status(root, AT + timedelta(hours=1, minutes=6))
+            self.assertEqual((st["hours_recorded"], st["uncommitted_hour_pending"]), (1, True))
+            # The dead worker's lock is gone with it.
+            with self.assertRaisesRegex(pg.Hold, "SKIPPED_OR_DUPLICATE_HOUR"):
+                pg.tick(root, AT + timedelta(hours=1, minutes=35))
+            self.assertEqual(pg.status(root, AT + timedelta(hours=1, minutes=36))["recovered_hours"], [1])
+            self.assertEqual(pg.tick(root, AT + timedelta(hours=2, minutes=5))["hour"], 2)
+
+    def test_kill_after_the_receipt_recovers_in_the_next_slot_too(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            pg.init_run(root, AT)
+            pg.tick(root, AT + timedelta(minutes=5))
+            self.kill_tick_at(root, timedelta(hours=1, minutes=5), "before_state_commit")
+            out = pg.tick(root, AT + timedelta(hours=2, minutes=5))
+            self.assertEqual((out["hour"], out["uncommitted_hour"]), (2, "ADOPTED"))
+
+    @unittest.skipUnless(os.path.exists("/proc/self/fd"), "needs /proc to name the receipt fd")
+    def test_kill_mid_receipt_is_quarantined_and_a_same_hour_retry_records_it(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            pg.init_run(root, AT)
+            pg.tick(root, AT + timedelta(minutes=5))
+            self.kill_tick_at(root, timedelta(hours=1, minutes=5), "torn_receipt")
+            torn = (root / "hours" / "hour-01.json").read_bytes()
+            with self.assertRaises(ValueError):
+                json.loads(torn)
+            out = pg.tick(root, AT + timedelta(hours=1, minutes=35))
+            self.assertEqual((out["hour"], out["uncommitted_hour"]), (1, "QUARANTINED"))
+            self.assertEqual(
+                [x.read_bytes() for x in (root / "quarantine").glob("hour-01.json.*")], [torn]
+            )
+            self.assertEqual(pg.status(root, AT + timedelta(hours=1, minutes=36))["hours_recorded"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()

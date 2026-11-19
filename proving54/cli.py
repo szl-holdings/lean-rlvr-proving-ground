@@ -46,7 +46,11 @@ def main(argv=None) -> int:
             out = engine.status(args.run, now)
     except (engine.Hold, OSError, ValueError) as e:
         code = str(e) if isinstance(e, engine.Hold) else type(e).__name__
-        print(json.dumps({"result": "HOLD", "reason": code}, sort_keys=True))
+        out = {"result": "HOLD", "reason": code}
+        if getattr(e, "adopted_hour", None) is not None:
+            # An earlier uncommitted receipt was committed by this call before it held.
+            out["adopted_uncommitted_hour"] = e.adopted_hour
+        print(json.dumps(out, sort_keys=True))
         return 2
     print(json.dumps(out, sort_keys=True, ensure_ascii=False))
     return 0
