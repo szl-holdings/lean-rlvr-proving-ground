@@ -139,12 +139,14 @@ class ManifestAndPhysics(unittest.TestCase):
         with self.assertRaises(pg.Hold):
             pg.validate(m)
 
-    def test_unrun_window_one_clock_cannot_be_readmitted(self):
-        m=fixture()
-        m["window"]["start_utc"]="2026-11-18T05:05:32Z"
-        m["window"]["end_utc"]="2026-11-20T11:05:32Z"
-        with self.assertRaisesRegex(pg.Hold,"EXACT_54H_WINDOW_REQUIRED"):
-            pg.validate(m)
+    def test_unrun_earlier_window_clocks_cannot_be_readmitted(self):
+        for start,end in (("2026-11-18T05:05:32Z","2026-11-20T11:05:32Z"),
+                          ("2026-11-19T10:05:32Z","2026-11-21T16:05:32Z")):
+            m=fixture()
+            m["window"]["start_utc"]=start
+            m["window"]["end_utc"]=end
+            with self.subTest(start=start),self.assertRaisesRegex(pg.Hold,"EXACT_54H_WINDOW_REQUIRED"):
+                pg.validate(m)
 
     def test_missing_science_domain_or_duplicate_rejected(self):
         m=fixture()

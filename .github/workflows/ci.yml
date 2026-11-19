@@ -48,3 +48,22 @@ jobs:
           python3 -B -m unittest discover -s tests -p 'test_proving54_local_cpu.py' -v
       - name: Chain integrity check
         run: python3 -c "import chains; result = chains.verify(); print(result); raise SystemExit(0 if result.get('ok') is True else 1)"
+
+  proving54-windows:
+    # The 54h run happens on a Windows laptop; this runs the proving54 suites on
+    # Windows so the msvcrt lock and Windows rename paths are exercised in CI.
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Keep LF so pinned source digests match on Windows
+        run: git config --global core.autocrlf false
+      # actions/checkout v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: proving54 admission, doctor and CPU suites on Windows (no GPU)
+        run: |
+          python --version
+          python -B proving54/admission.py
+          python -B proving54/cli.py doctor
+          python -B -m unittest discover -s tests -p 'test_proving54_*.py' -v
