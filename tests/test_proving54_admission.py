@@ -15,7 +15,7 @@ from proving54 import admission as pg
 
 ROOT = Path(__file__).resolve().parents[1]
 FILE = ROOT / "proving54" / "manifest.json"
-NOW = datetime(2026, 11, 18, 5, 6, tzinfo=timezone.utc)
+NOW = pg.START + timedelta(seconds=28)
 
 
 def fixture():
@@ -135,9 +135,18 @@ class ManifestAndPhysics(unittest.TestCase):
         with self.assertRaises(pg.Hold):
             pg.validate(m)
         m=fixture()
-        m["window"]["end_utc"]="2026-11-20T11:06:00Z"
+        m["window"]["end_utc"]=(pg.START+timedelta(hours=54,seconds=28)).isoformat()
         with self.assertRaises(pg.Hold):
             pg.validate(m)
+
+    def test_unrun_earlier_window_clocks_cannot_be_readmitted(self):
+        for start,end in (("2026-11-18T05:05:32Z","2026-11-20T11:05:32Z"),
+                          ("2026-11-19T10:05:32Z","2026-11-21T16:05:32Z")):
+            m=fixture()
+            m["window"]["start_utc"]=start
+            m["window"]["end_utc"]=end
+            with self.subTest(start=start),self.assertRaisesRegex(pg.Hold,"EXACT_54H_WINDOW_REQUIRED"):
+                pg.validate(m)
 
     def test_missing_science_domain_or_duplicate_rejected(self):
         m=fixture()
