@@ -597,6 +597,52 @@ def _quarantine(root: Path, path: Path, raw: bytes) -> Path:
     return target
 
 
+def _fsync_path(path: Path) -> None:
+    """fsync a file this process did not write.
+
+    POSIX fsync works through a read-only descriptor. Windows needs a write
+    handle, which refuses to open while a reader that shares read-only has it.
+    """
+    if os.name == "nt":
+        with path.open("r+b") as stream:
+            os.fsync(stream.fileno())
+        return
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _flush_file(path: Path) -> None:
+    """Make bytes a dead writer may have left unflushed durable, retrying
+    the Windows sharing violation a status reader can cause."""
+    for attempt in range(8):
+        try:
+            _fsync_path(path)
+            return
+        except PermissionError:
+            if attempt == 7:
+                raise
+            time.sleep(0.05 * (2**attempt))
+
+
+def _hour_record(hour: int, at: datetime, state: dict, ev: dict) -> dict:
+    return {
+        "schema": "szl.proving54-hour-record/v1",
+        "hour": hour,
+        "at_utc": at.isoformat(),
+        "phase": ev["phase"],
+        "previous_sha256": state["chain_head_sha256"],
+        "source_registry_sha256": state["source_registry_sha256"],
+        "episode": ev,
+        "all_tasks_fully_answered": False,
+        "model_promoted": False,
+        "physical_mesh_validated": False,
+        "signed": False,
+    }
+
+
 @contextlib.contextmanager
 def _single_writer(root: Path):
     """An OS lock on a persistent file, so a worker that dies releases it."""
@@ -622,7 +668,7 @@ def _single_writer(root: Path):
         os.close(fd)
 
 
-def _adopt_uncommitted_hour(root: Path, state: dict) -> tuple:
+def _adopt_uncommitted_hour(root: Path, state: dict, now: datetime) -> tuple:
     """Roll forward one receipt that a tick wrote but could not commit.
 
     A tick fsyncs hour-N before it saves state.json, so a failed or killed save
@@ -630,6 +676,13 @@ def _adopt_uncommitted_hour(root: Path, state: dict) -> tuple:
     link, written inside its own slot, for this source; anything else goes to
     quarantine/. Committed state is untouched by a quarantine, so the same call
     may still record its own open slot. Adopted hours are in recovered_hours.
+
+    The file must also be exactly the bytes tick would have written for that
+    hour (everything but at_utc is recomputed), stamped no earlier than this
+    run's bootstrap and no later than `now`, and it is fsynced before
+    state.json names it. at_utc is self-reported and receipts are unsigned,
+    so a byte-exact file planted by someone who can write the run directory
+    cannot be told apart from an interrupted tick's receipt.
     """
     files = _hour_files(root)
     n = state["hours_completed"]
@@ -659,12 +712,23 @@ def _adopt_uncommitted_hour(root: Path, state: dict) -> tuple:
                 type(v) is float and math.isfinite(v) and -8 <= v <= 8
                 for v in weights
             )
+            and utc(state["bootstrapped_at_utc"]) <= at <= utc(now)
+            and packed(
+                _hour_record(n, at, state, episode(n, state["toy_cpu_policy_weights"]))
+            )
+            == raw
         )
     except (Hold, KeyError, TypeError):
         valid = False
     if not valid:
         _quarantine(root, orphan, raw)
         return state, "QUARANTINED"
+    try:
+        # Its writer may have died between write() and fsync(); make it
+        # durable before state.json names it. The receipt stays in place.
+        _flush_file(orphan)
+    except OSError:
+        raise Hold("ADOPTED_HOUR_NOT_COMMITTED") from None
     state["chain_head_sha256"] = digest(raw)
     state["hours_completed"] = n + 1
     state["last_hour"] = n
@@ -701,26 +765,19 @@ def tick(root: Path, now: datetime) -> dict:
             # Left by an earlier call that died mid-save; state.json is the
             # committed copy, so the leftover is moved aside, not trusted.
             _quarantine(root, temp, temp.read_bytes())
-        state, recovery = _adopt_uncommitted_hour(root, state)
-        _read_events(root, state)
-        slot = int((current - start).total_seconds() // 3600)
-        require(0 <= slot < 54, "HOUR_OUTSIDE_WINDOW")
-        require(slot == state["hours_completed"], "SKIPPED_OR_DUPLICATE_HOUR")
+        state, recovery = _adopt_uncommitted_hour(root, state, current)
+        try:
+            _read_events(root, state)
+            slot = int((current - start).total_seconds() // 3600)
+            require(0 <= slot < 54, "HOUR_OUTSIDE_WINDOW")
+            require(slot == state["hours_completed"], "SKIPPED_OR_DUPLICATE_HOUR")
+        except Hold as exc:
+            if recovery == "ADOPTED":
+                # The adopted hour stays committed even though this call holds.
+                exc.adopted_hour = state["last_hour"]
+            raise
         ev = episode(slot, state["toy_cpu_policy_weights"])
-        record = {
-            "schema": "szl.proving54-hour-record/v1",
-            "hour": slot,
-            "at_utc": current.isoformat(),
-            "phase": ev["phase"],
-            "previous_sha256": state["chain_head_sha256"],
-            "source_registry_sha256": state["source_registry_sha256"],
-            "episode": ev,
-            "all_tasks_fully_answered": False,
-            "model_promoted": False,
-            "physical_mesh_validated": False,
-            "signed": False,
-        }
-        data = packed(record)
+        data = packed(_hour_record(slot, current, state, ev))
         path = root / "hours" / f"hour-{slot:02d}.json"
         with path.open("xb") as f:
             f.write(data)

@@ -173,10 +173,26 @@ never deleted; committed state is untouched, so the same call can still
 record its own open slot. Hour files must be named exactly `hour-NN.json`:
 a copy such as `hour-01 - Copy.json` holds with `NONCANONICAL_HOUR_FILE`
 and nothing is moved. Renames retry for a few seconds on Windows sharing
-violations, including the `init` rename of its staging folder. Each receipt
+violations, including the `init` rename of its staging folder.
+
+Adoption is bounded further. The file must be byte-for-byte the receipt `tick`
+would have written for that hour (everything but `at_utc` is recomputed from
+the committed state), stamped no earlier than the run's bootstrap and no later
+than the adopting call's clock, and it is fsynced before `state.json` names it;
+if that flush fails the tick holds with `ADOPTED_HOUR_NOT_COMMITTED` and the
+file stays pending. A valid-looking file that fails any of this goes to
+`quarantine/`. When the adopting call then holds (for example
+`SKIPPED_OR_DUPLICATE_HOUR` because the adopted hour was this slot's own), the
+CLI's HOLD line also carries `adopted_uncommitted_hour`. Hour 53 has no later
+slot: a receipt left uncommitted there is adopted only by a retry inside that
+hour, and once the window closes it stays pending, untouched. Receipts are
+unsigned and carry no run identity, so a byte-exact file planted by someone
+who can write the run directory looks the same as an interrupted tick's own.
+
+Each receipt
 includes source/previous hashes and exact named tasks, but an unsigned
 SHA-256 chain is **not proof of author identity**. Success in its
-61 regression tests, which CI runs on Linux and Windows, does not grant
+84 regression tests (17 admission, 67 local CPU), which CI runs on Linux and Windows, does not grant
 model deployment authority.
 
 The private hourly steward scheduled outside GitHub may invoke this
