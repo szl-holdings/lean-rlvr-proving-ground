@@ -9,7 +9,7 @@ import unittest
 
 from proving54 import engine as pg
 
-AT = datetime(2026, 11, 18, 5, 5, 32, tzinfo=timezone.utc)
+AT = pg.approved_source.START
 
 
 class RoleAndOracleTests(unittest.TestCase):
@@ -168,6 +168,78 @@ class TimeboxTests(unittest.TestCase):
             with self.assertRaises(pg.Hold):
                 pg.init_run(root, AT)
             self.assertEqual(sentinel.read_text(), "never delete")
+
+    def test_init_only_during_source_hour_zero(self):
+        with tempfile.TemporaryDirectory() as temp:
+            late = Path(temp) / "late"
+            for when in (
+                AT - timedelta(seconds=1),
+                AT + timedelta(hours=1),
+                AT + timedelta(hours=27),
+            ):
+                with self.subTest(when=when.isoformat()):
+                    with self.assertRaisesRegex(
+                        pg.Hold, "INITIALIZATION_OUTSIDE_SOURCE_HOUR_ZERO"
+                    ):
+                        pg.init_run(late, when)
+                    self.assertFalse(late.exists())
+            edge = Path(temp) / "edge"
+            first = pg.init_run(edge, AT + timedelta(minutes=59, seconds=59))
+            self.assertEqual(first["window_start"], AT.isoformat())
+            self.assertEqual(
+                first["window_end"], (AT + timedelta(hours=54)).isoformat()
+            )
+
+    def test_session_clock_cannot_be_rebased(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            pg.init_run(root, AT + timedelta(minutes=5))
+            state_path = root / "state.json"
+            original = state_path.read_bytes()
+            later = AT + timedelta(hours=27)
+            cases = (
+                ("started_at_utc", later.isoformat(),
+                 "SESSION_WINDOW_NOT_BOUND_TO_SOURCE"),
+                ("expires_at_utc", (later + timedelta(hours=54)).isoformat(),
+                 "SESSION_WINDOW_NOT_BOUND_TO_SOURCE"),
+                ("bootstrapped_at_utc", later.isoformat(),
+                 "SESSION_BOOTSTRAP_NOT_IN_FIRST_CLOCK_HOUR"),
+                ("bootstrapped_at_utc", None, "TIMESTAMP_TYPE"),
+            )
+            for field, value, reason in cases:
+                with self.subTest(field=field, value=value):
+                    state = pg.strict_load(original)
+                    state[field] = value
+                    state_path.write_bytes(pg.packed(state))
+                    with self.assertRaisesRegex(pg.Hold, reason):
+                        pg.tick(root, later + timedelta(minutes=10))
+                    self.assertEqual(list((root / "hours").glob("*.json")), [])
+                    self.assertFalse((root / ".single-writer.lock").exists())
+            state_path.write_bytes(original)
+            self.assertEqual(pg.tick(root, AT + timedelta(minutes=10))["hour"], 0)
+
+    def test_no_tick_outside_source_window(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            pg.init_run(root, AT)
+            for when in (AT - timedelta(seconds=1), AT + timedelta(hours=54)):
+                with self.subTest(when=when.isoformat()):
+                    with self.assertRaisesRegex(pg.Hold, "OUTSIDE_54H_WINDOW"):
+                        pg.tick(root, when)
+            self.assertEqual(list((root / "hours").glob("*.json")), [])
+
+    def test_one_missed_hour_ends_the_run(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            pg.init_run(root, AT)
+            pg.tick(root, AT + timedelta(minutes=20))
+            for h in range(2, 6):
+                with self.subTest(hour=h):
+                    with self.assertRaisesRegex(pg.Hold, "SKIPPED_OR_DUPLICATE_HOUR"):
+                        pg.tick(root, AT + timedelta(hours=h, minutes=20))
+            self.assertEqual(
+                pg.status(root, AT + timedelta(hours=6))["hours_recorded"], 1
+            )
 
 
 if __name__ == "__main__":

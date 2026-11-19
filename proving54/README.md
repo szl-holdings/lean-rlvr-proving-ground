@@ -1,7 +1,21 @@
 # SZL 54-Hour Five-Role Proving Ground — Source and Admission
 
-**Research clock:** November 18, 2026, 05:05:32 UTC → November 20, 2026,
-11:05:32 UTC. **SOURCE/HARD-GATE STARTED; GPU TRAINING NOT ADMITTED.**
+**Research clock (window 2):** 2026-11-19T10:05:32Z → 2026-11-21T16:05:32Z.
+**SOURCE/HARD-GATE STARTED; GPU TRAINING NOT ADMITTED.**
+
+| Window | Source clock (UTC) | Status |
+|---|---|---|
+| 1 | 2026-11-18T05:05:32Z → 2026-11-20T11:05:32Z | **BLOCKED.** No run was initialized during its hour zero, so 0 of 54 hourly receipts exist. It was not backfilled, replayed or restarted on a shifted clock. Its manifest stays in history at `23c9478`. |
+| 2 | 2026-11-19T10:05:32Z → 2026-11-21T16:05:32Z | **HOLD_SOURCE_PROPOSAL.** A run may start only during hour zero, `[start, start + 1h)`. |
+
+Window 1 is recorded here, not erased. At `23c9478` the CLI's `init`
+accepted any time and opened a fresh 54-hour session from that moment,
+outside the manifest window. The session is now bound to
+`admission.START`: `init` refuses any time outside hour zero
+(`INITIALIZATION_OUTSIDE_SOURCE_HOUR_ZERO`), and `tick` refuses a session
+whose recorded window or bootstrap time was moved
+(`SESSION_WINDOW_NOT_BOUND_TO_SOURCE`,
+`SESSION_BOOTSTRAP_NOT_IN_FIRST_CLOCK_HOUR`).
 
 This extends, without changing its authority, the preexisting
 [54-hour Ouroboros curriculum](https://github.com/szl-holdings/szl-gpu-bridge/blob/5d8f6034a84fe37a4116ff9d7cb4a35f7dcbe667/docs/OUROBOROS_CURRICULUM.md):
@@ -123,7 +137,8 @@ modified source/rights/clock/worker assertions. It never creates a
 second source-policy authority, scheduler or inference endpoint.
 
 With a fresh, reviewed source checkout and an existing private parent
-directory, a responsible operator may initiate exactly one rehearsal.
+directory, a responsible operator may initiate exactly one rehearsal, and
+only during hour zero of the manifest window.
 The CLI reads the **actual UTC clock**; it has no `--clock` spoof
 switch. The pure functions accept explicit timestamps for source unit
 tests only. A local run path is exclusive; existing runs are never
@@ -136,10 +151,12 @@ overwritten:
 
 An operator may call `tick` at most once per **consecutive elapsed
 UTC hour**; skipped hours, duplicate hours, source-policy drift, broken
-hash chains or a live single-writer lock cause HOLD. Each receipt
+hash chains or a live single-writer lock cause HOLD. One missed hour
+ends the run: every later `tick` returns `SKIPPED_OR_DUPLICATE_HOUR`, and
+the gap is never filled in afterwards. Each receipt
 includes source/previous hashes and exact named tasks, but an unsigned
 SHA-256 chain is **not proof of author identity**. Success in its
-12 regression tests does not grant model deployment authority.
+16 regression tests does not grant model deployment authority.
 
 The private hourly steward scheduled outside GitHub may invoke this
 *one-shot* command if the authorized device is connected and the
@@ -153,7 +170,8 @@ results, nor certify five physical supercomputers from five roles.
 
 ## Salad + Massed physical pool: no phantom nodes
 
-At the last authorized Massed provider readback (**2026-11-18 04:51 UTC**),
+At the last authorized Massed provider readback recorded when window 1
+was written (**2026-11-18 04:51 UTC**; not refreshed for window 2),
 the two named nodes were Gate1 **Stopped** and CUDA **Running**. Four
 provider instances were visible, **not five verified independent healthy
 compute hosts**. The approved Salad watcher was in direct-HF fallback
@@ -189,11 +207,13 @@ independently unverified or actually open scientific targets remain
 **HOLD**. Honest abstention can be rewarded for *training behavior* but
 is not a mathematical solution or a production promotion.
 
-An hourly, timeboxed SZL proving-ground steward was separately scheduled
-with 54 occurrences through November 20, 2026. It may run a bounded,
-authorized iteration when the device and source are available; scheduling
-alone does not prove execution. That steward cannot bypass any existing
-trainer, budget, GPU, publisher or service-control gate.
+The window-1 hourly steward (54 occurrences through November 20, 2026)
+was disabled after its hour zero passed without a run. A window-2
+scheduler lives outside this repository and may call only `init` during
+hour zero and at most one `tick` per hour; scheduling alone does not prove
+execution, and only the hour files on the operator machine count. No
+scheduler can bypass any existing trainer, budget, GPU, publisher or
+service-control gate.
 
 **Current result: source policy and arithmetic proof staging; physical
 five-node mesh, actual 54-hour GPU training, solved grand challenges,

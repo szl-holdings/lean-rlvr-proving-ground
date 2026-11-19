@@ -2,8 +2,8 @@
   "schema": "szl.proving-ground.54h/v1",
   "name": "SZL 54-hour five-role scientific-mathematics proving ground",
   "window": {
-    "start_utc": "2026-11-18T05:05:32Z",
-    "end_utc": "2026-11-20T11:05:32Z",
+    "start_utc": "2026-11-19T10:05:32Z",
+    "end_utc": "2026-11-21T16:05:32Z",
     "duration_hours": 54
   },
   "phase_boundaries": [
