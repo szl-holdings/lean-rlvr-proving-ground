@@ -50,6 +50,9 @@ def main(argv=None) -> int:
         if isinstance(e, engine.ReceiptNotCommitted):
             # The receipt is on disk; the next tick decides whether to adopt it.
             out["uncommitted_hour"] = e.hour
+        if getattr(e, "adopted_hour", None) is not None:
+            # This tick committed an earlier uncommitted receipt before holding.
+            out["adopted_uncommitted_hour"] = e.adopted_hour
         print(json.dumps(out, sort_keys=True))
         return 2
     print(json.dumps(out, sort_keys=True, ensure_ascii=False))

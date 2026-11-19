@@ -156,33 +156,57 @@ ends the run: every later `tick` returns `SKIPPED_OR_DUPLICATE_HOUR`, and
 the gap is never filled in afterwards. Each receipt
 includes source/previous hashes and exact named tasks, but an unsigned
 SHA-256 chain is **not proof of author identity**. Success in its
-30 regression tests (two use POSIX file-size limits and are skipped on
-Windows) does not grant model deployment authority.
+38 regression tests (five are POSIX-only and skipped on Windows) does not
+grant model deployment authority.
 
 **Crash and failed-commit recovery.** Window 2 runs the source pinned at
-`a76fe16`, which predates this section. The single-writer lock is an
-operating-system lock on `.single-writer.lock` (`fcntl.flock` on POSIX,
-`msvcrt.locking` on Windows) that is released when its process dies, so a
-killed `tick` no longer leaves a lock that holds every later hour. A lock
-file left behind is reused, and `status` reports
-`single_writer_lock_file_present` (presence, not liveness). Before it
-writes an hour receipt, `tick` checks every precondition and stages the
-new `state.json`; after the receipt only one `os.replace` can fail, and it
-is retried five times over about 1.5 s while Windows reports a sharing
-violation. A leftover `state.json.temporary` is moved to `quarantine/`
-under the lock, never deleted; if it cannot be moved, `tick` holds with
-`ATOMIC_WRITE_CONFLICT` before writing any receipt. A receipt written but
-not committed returns `HOUR_RECEIPT_WRITTEN_NOT_COMMITTED`, and the CLI
-adds `uncommitted_hour`. The next `tick` in the window adopts that one file
-only if it is byte for byte the receipt `tick` would have written for
-`hour == hours_completed`, `previous_sha256 == chain_head_sha256` and the
-session's source digest, at an `at_utc` inside that hour's slot. Anything
-else is moved to `quarantine/` and `tick` holds with
-`UNCOMMITTED_HOUR_FILE_QUARANTINED`. Adoption never records a missed hour:
-the no-skip, no-replay, no-backfill and hour-zero-only rules are unchanged,
-so under a once-per-hour schedule a kill before the receipt is complete
-still costs that hour and therefore the run. CI runs on Linux and does not
-exercise the Windows lock path.
+`a76fe16`, which predates this section. Writers from `a76fe16` and from
+this source do not exclude each other, so never run both against one run
+directory. The single-writer lock is an operating-system lock on
+`.single-writer.lock` (`fcntl.flock` on POSIX, `msvcrt.locking` on
+Windows) that is released when its process dies, so a killed `tick` no
+longer holds every later hour. A lock file left behind is reused or
+removed by the next `tick`. Never delete it by hand: on POSIX that breaks
+exclusion. `status` reports `single_writer_lock_file_present`, which shows
+presence, not liveness.
+
+Before it writes an hour receipt, `tick` checks every precondition and
+stages the new `state.json`, holding with `STATE_COMMIT_NOT_STAGED` if it
+cannot. After the receipt, only one `os.replace` can fail, and it is
+retried five times over about 1.5 s while Windows reports a sharing
+violation. A failure there returns `HOUR_RECEIPT_WRITTEN_NOT_COMMITTED`
+(the CLI adds `uncommitted_hour`), and a torn write returns
+`HOUR_RECEIPT_WRITE_FAILED`. A leftover `state.json.temporary` is moved to
+`quarantine/` under the lock, never deleted; if it cannot be moved, `tick`
+holds with `ATOMIC_WRITE_CONFLICT` before writing any receipt.
+
+The next `tick` inside the window adopts one uncommitted next-hour file
+only if all of these hold:
+
+- it is byte for byte the receipt `tick` would have written for
+  `hour == hours_completed`, `previous_sha256 == chain_head_sha256` and
+  the session's source digest;
+- its `at_utc` lies inside that hour's slot;
+- its `at_utc` is no earlier than the run's bootstrap and no later than
+  the adopting `tick`'s clock.
+
+An adopted hour is recorded in `state.json` as `adopted_hours`. When the
+adopted hour is the current one, `tick` returns
+`UNCOMMITTED_HOUR_ADOPTED_REVIEW_ONLY`, and a hold that follows an
+adoption carries `adopted_uncommitted_hour`. Any other such file is moved
+to `quarantine/` and `tick` holds with `UNCOMMITTED_HOUR_FILE_QUARANTINED`,
+or with `UNCOMMITTED_HOUR_FILE_NOT_ADOPTABLE` if the file cannot be moved.
+`status` reports the file as `uncommitted_hour_file` instead of failing. No
+tick changes the run outside its window, so a receipt left uncommitted in
+the final hour can be adopted only by a retry inside that hour.
+
+Adoption writes no receipt, and the no-skip, no-replay, no-backfill and
+hour-zero-only rules are unchanged. Under a once-per-hour schedule, a kill
+before the receipt is complete still costs that hour, and therefore the
+run. Receipts are unsigned and carry no run identity, so a byte-exact file
+planted by someone who can write the run directory looks the same as an
+interrupted tick's receipt; that writer could already edit `state.json`.
+CI runs on Linux and does not exercise the Windows lock path.
 
 The private hourly steward scheduled outside GitHub may invoke this
 *one-shot* command if the authorized device is connected and the

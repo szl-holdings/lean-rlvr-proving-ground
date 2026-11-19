@@ -3,6 +3,7 @@
 from __future__ import annotations
 import contextlib
 from datetime import datetime, timedelta, timezone
+import errno
 from fractions import Fraction
 import io
 import json
@@ -425,33 +426,39 @@ class CommitRecoveryTests(unittest.TestCase):
             self.assertFalse((root / LOCK).exists())
             st = pg.status(root, AT + timedelta(minutes=13))
             self.assertEqual(st["hours_recorded"], 0)
-            self.assertEqual(st["uncommitted_hour_pending_roll_forward"], 0)
+            self.assertEqual(st["uncommitted_hour_file"], {"hour": 0, "adoptable": True})
 
-    def test_cli_names_a_written_but_uncommitted_receipt(self):
+    def test_cli_names_uncommitted_and_adopted_receipts(self):
         from proving54 import cli
 
-        fixed = AT + timedelta(minutes=12)
+        def cli_tick(root: Path, fixed: datetime) -> tuple[int, dict]:
+            class FixedClock(datetime):
+                @classmethod
+                def now(cls, tz=None):
+                    return fixed
 
-        class FixedClock(datetime):
-            @classmethod
-            def now(cls, tz=None):
-                return fixed
+            out = io.StringIO()
+            with mock.patch.object(cli, "datetime", FixedClock), contextlib.redirect_stdout(out):
+                code = cli.main(["tick", "--run", str(root)])
+            return code, json.loads(out.getvalue())
 
         with tempfile.TemporaryDirectory() as temp:
             root = new_run(temp)
-            out = io.StringIO()
-            with replace_fails(10**6), mock.patch.object(
-                cli, "datetime", FixedClock
-            ), contextlib.redirect_stdout(out):
-                code = cli.main(["tick", "--run", str(root)])
-            self.assertEqual(code, 2)
+            with replace_fails(10**6):
+                result = cli_tick(root, AT + timedelta(minutes=12))
             self.assertEqual(
-                json.loads(out.getvalue()),
-                {
-                    "result": "HOLD",
-                    "reason": "HOUR_RECEIPT_WRITTEN_NOT_COMMITTED",
-                    "uncommitted_hour": 0,
-                },
+                result,
+                (2, {"result": "HOLD", "reason": "HOUR_RECEIPT_WRITTEN_NOT_COMMITTED",
+                     "uncommitted_hour": 0}),
+            )
+        with tempfile.TemporaryDirectory() as temp:
+            # A hold that follows an adoption still says the hour was committed.
+            root = new_run(temp)
+            lose_state_commit(root, AT + timedelta(minutes=12))
+            self.assertEqual(
+                cli_tick(root, AT + timedelta(hours=2, minutes=5)),
+                (2, {"result": "HOLD", "reason": "SKIPPED_OR_DUPLICATE_HOUR",
+                     "adopted_uncommitted_hour": 0}),
             )
 
     def test_uncommitted_receipt_rolls_forward_without_skip_or_backfill(self):
@@ -466,8 +473,9 @@ class CommitRecoveryTests(unittest.TestCase):
                 lose_state_commit(root, AT + timedelta(minutes=12))
                 receipt = (root / "hours" / "hour-00.json").read_bytes()
                 if outcome == "SKIPPED_OR_DUPLICATE_HOUR":
-                    with self.assertRaisesRegex(pg.Hold, outcome):
+                    with self.assertRaisesRegex(pg.Hold, outcome) as caught:
                         pg.tick(root, AT + later)
+                    self.assertEqual(caught.exception.adopted_hour, 0)
                 else:
                     try:
                         r = pg.tick(root, AT + later)
@@ -477,7 +485,8 @@ class CommitRecoveryTests(unittest.TestCase):
                     self.assertEqual(r["adopted_uncommitted_hour"], 0)
                 st = pg.status(root, AT + later)
                 self.assertEqual(st["hours_recorded"], committed)
-                self.assertIsNone(st["uncommitted_hour_pending_roll_forward"])
+                self.assertIsNone(st["uncommitted_hour_file"])
+                self.assertEqual(st["adopted_hours"], [0])
                 names = sorted(p.name for p in (root / "hours").iterdir())
                 self.assertEqual(names, [f"hour-{h:02d}.json" for h in range(committed)])
                 self.assertEqual((root / "hours" / "hour-00.json").read_bytes(), receipt)
@@ -515,8 +524,10 @@ class CommitRecoveryTests(unittest.TestCase):
                 bad = change(path.read_bytes())
                 path.write_bytes(bad)
                 state = (root / "state.json").read_bytes()
-                with self.assertRaisesRegex(pg.Hold, "UNCOMMITTED_HOUR_FILE_NOT_ADOPTABLE"):
-                    pg.status(root, AT + timedelta(minutes=30))
+                self.assertEqual(
+                    pg.status(root, AT + timedelta(minutes=30))["uncommitted_hour_file"],
+                    {"hour": 0, "adoptable": False},
+                )
                 with self.assertRaisesRegex(pg.Hold, "UNCOMMITTED_HOUR_FILE_QUARANTINED"):
                     pg.tick(root, AT + timedelta(minutes=30))
                 self.assertEqual(list((root / "hours").iterdir()), [])
@@ -547,6 +558,155 @@ class CommitRecoveryTests(unittest.TestCase):
                     sorted(p.name for p in (root / "hours").iterdir()), sorted(names)
                 )
                 self.assertFalse((root / "quarantine").exists())
+
+    def test_receipt_from_before_this_run_or_after_the_clock_is_quarantined(self):
+        with self.subTest("another run's receipt, older than this run"), \
+                tempfile.TemporaryDirectory() as temp:
+            other = Path(temp) / "other"
+            pg.init_run(other, AT)
+            pg.tick(other, AT + timedelta(minutes=10))
+            root = Path(temp) / "new"
+            pg.init_run(root, AT + timedelta(minutes=20))
+            copied = (other / "hours" / "hour-00.json").read_bytes()
+            (root / "hours" / "hour-00.json").write_bytes(copied)
+            self.assertEqual(
+                pg.status(root, AT + timedelta(minutes=30))["uncommitted_hour_file"],
+                {"hour": 0, "adoptable": False},
+            )
+            with self.assertRaisesRegex(pg.Hold, "UNCOMMITTED_HOUR_FILE_QUARANTINED"):
+                pg.tick(root, AT + timedelta(minutes=30))
+            self.assertEqual(
+                [p.read_bytes() for p in (root / "quarantine").iterdir()], [copied]
+            )
+        with self.subTest("stamped after the adopting tick's clock"), \
+                tempfile.TemporaryDirectory() as temp:
+            root = new_run(temp)
+            lose_state_commit(root, AT + timedelta(minutes=50))
+            with self.assertRaisesRegex(pg.Hold, "UNCOMMITTED_HOUR_FILE_QUARANTINED"):
+                pg.tick(root, AT + timedelta(minutes=20))
+            self.assertEqual(
+                pg.status(root, AT + timedelta(minutes=21))["hours_recorded"], 0
+            )
+
+    def test_failed_roll_forward_commit_keeps_the_receipt_for_the_next_tick(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = new_run(temp)
+            lose_state_commit(root, AT + timedelta(minutes=12))
+            receipt = (root / "hours" / "hour-00.json").read_bytes()
+            before = (root / "state.json").read_bytes()
+            with replace_fails(10**6):
+                with self.assertRaises(pg.ReceiptNotCommitted) as caught:
+                    pg.tick(root, AT + timedelta(hours=1, minutes=5))
+            self.assertEqual(str(caught.exception), "HOUR_RECEIPT_WRITTEN_NOT_COMMITTED")
+            self.assertEqual(caught.exception.hour, 0)
+            self.assertEqual((root / "state.json").read_bytes(), before)
+            self.assertFalse((root / TEMP).exists())
+            self.assertEqual((root / "hours" / "hour-00.json").read_bytes(), receipt)
+            self.assertFalse((root / "quarantine").exists())
+            r = pg.tick(root, AT + timedelta(hours=1, minutes=6))
+            self.assertEqual((r["hour"], r["adopted_uncommitted_hour"]), (1, 0))
+
+    def test_unadoptable_receipt_that_cannot_be_moved_holds_in_place(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = new_run(temp)
+            lose_state_commit(root, AT + timedelta(minutes=12))
+            path = root / "hours" / "hour-00.json"
+            torn = path.read_bytes()[:100]
+            path.write_bytes(torn)
+            real = os.rename
+
+            def rename(src, dst, *args, **kwargs):
+                if Path(src).name == "hour-00.json":
+                    raise PermissionError(13, "simulated sharing violation", str(src))
+                return real(src, dst, *args, **kwargs)
+
+            with mock.patch("os.rename", rename), mock.patch("time.sleep"):
+                with self.assertRaisesRegex(pg.Hold, "UNCOMMITTED_HOUR_FILE_NOT_ADOPTABLE"):
+                    pg.tick(root, AT + timedelta(minutes=30))
+            self.assertEqual(path.read_bytes(), torn)
+
+    def test_final_hour_receipt_is_adopted_only_inside_the_window(self):
+        last = AT + timedelta(hours=53, minutes=1)
+        after = AT + timedelta(hours=54, minutes=1)
+
+        def run_to_uncommitted_final_hour(temp: str) -> Path:
+            root = new_run(temp)
+            for h in range(53):
+                pg.tick(root, AT + timedelta(hours=h, minutes=1))
+            lose_state_commit(root, last)
+            return root
+
+        for torn in (False, True):
+            with self.subTest(torn=torn), tempfile.TemporaryDirectory() as temp:
+                root = run_to_uncommitted_final_hour(temp)
+                path = root / "hours" / "hour-53.json"
+                if torn:
+                    path.write_bytes(path.read_bytes()[:100])
+                receipt = path.read_bytes()
+                # No tick changes the run once the window has closed ...
+                with self.assertRaisesRegex(pg.Hold, "OUTSIDE_54H_WINDOW"):
+                    pg.tick(root, after)
+                self.assertEqual(path.read_bytes(), receipt)
+                # ... and status reports the file instead of failing.
+                st = pg.status(root, after)
+                self.assertEqual(st["hours_recorded"], 53)
+                self.assertEqual(
+                    st["uncommitted_hour_file"], {"hour": 53, "adoptable": not torn}
+                )
+        with tempfile.TemporaryDirectory() as temp:
+            # A retry inside hour 53 is the only recovery for the final hour.
+            root = run_to_uncommitted_final_hour(temp)
+            r = pg.tick(root, last + timedelta(minutes=30))
+            self.assertEqual(r["state"], "UNCOMMITTED_HOUR_ADOPTED_REVIEW_ONLY")
+            self.assertEqual(pg.status(root, after)["hours_recorded"], 54)
+
+    @unittest.skipIf(os.name == "nt", "compares POSIX inode numbers")
+    def test_adopted_receipt_is_flushed_before_state_names_it(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = new_run(temp)
+            lose_state_commit(root, AT + timedelta(minutes=12))
+            receipt = os.stat(root / "hours" / "hour-00.json").st_ino
+            events = []
+            real_fsync, real_replace = os.fsync, os.replace
+
+            def fsync(fd):
+                events.append(("fsync", os.fstat(fd).st_ino))
+                return real_fsync(fd)
+
+            def replace(src, dst, *args, **kwargs):
+                events.append(("replace", Path(dst).name))
+                return real_replace(src, dst, *args, **kwargs)
+
+            with mock.patch("os.fsync", fsync), mock.patch("os.replace", replace):
+                pg.tick(root, AT + timedelta(minutes=40))
+            commit = events.index(("replace", "state.json"))
+            self.assertIn(("fsync", receipt), events[:commit])
+
+
+class FakeMsvcrt:
+    """MODELED, not Windows: one-byte exclusive locks at the current file
+    position with the CRT's LK_* modes, to check the Windows branch's call
+    protocol on any OS."""
+
+    LK_UNLCK, LK_LOCK, LK_NBLCK, LK_RLCK, LK_NBRLCK = 0, 1, 2, 3, 4
+
+    def __init__(self, fail_with=None):
+        self.held, self.calls, self.fail_with = {}, [], fail_with
+
+    def locking(self, fd, mode, nbytes):
+        st = os.fstat(fd)
+        key = (st.st_dev, st.st_ino, os.lseek(fd, 0, os.SEEK_CUR), nbytes)
+        self.calls.append((mode, key[2], nbytes))
+        if self.fail_with is not None:
+            raise OSError(self.fail_with, os.strerror(self.fail_with))
+        if mode == self.LK_NBLCK:
+            if key in self.held:
+                raise OSError(errno.EACCES, "locked through another handle")
+            self.held[key] = fd
+        elif mode == self.LK_UNLCK and self.held.get(key) == fd:
+            del self.held[key]
+        else:
+            raise OSError(errno.EACCES, f"unexpected LK mode {mode}")
 
 
 class WriterLockTests(unittest.TestCase):
@@ -590,7 +750,7 @@ class WriterLockTests(unittest.TestCase):
             child = self.hung_writer(root, when, "episode")
             with self.assertRaisesRegex(pg.Hold, "ANOTHER_WORKER_OWNS_THIS_RUN"):
                 pg.tick(root, when + timedelta(seconds=1))
-            self.assertTrue(pg.status(root, when)["single_writer_lock_file_present"])
+            self.assertTrue((root / LOCK).exists())
             stop(child)
             r = tick_after_writer_died(self, root, when + timedelta(seconds=2))
             self.assertEqual(r["hour"], 0)
@@ -606,7 +766,7 @@ class WriterLockTests(unittest.TestCase):
             later = AT + timedelta(hours=1, minutes=2)
             st = pg.status(root, later)
             self.assertEqual(st["hours_recorded"], 0)
-            self.assertEqual(st["uncommitted_hour_pending_roll_forward"], 0)
+            self.assertEqual(st["uncommitted_hour_file"], {"hour": 0, "adoptable": True})
             self.assertTrue(st["state_temp_file_present"])
             self.assertTrue(st["single_writer_lock_file_present"])
             r = tick_after_writer_died(self, root, later)
@@ -614,6 +774,7 @@ class WriterLockTests(unittest.TestCase):
             self.assertEqual(len(r["quarantined"]), 1)
             st = pg.status(root, later)
             self.assertEqual(st["hours_recorded"], 2)
+            self.assertEqual(st["adopted_hours"], [0])
             self.assertFalse(st["state_temp_file_present"])
             self.assertFalse(st["single_writer_lock_file_present"])
             self.assertEqual((root / "hours" / "hour-00.json").read_bytes(), receipt)
@@ -690,14 +851,88 @@ class WriterLockTests(unittest.TestCase):
             self.assertEqual((root / "state.json").read_bytes(), before)
             self.assertFalse((root / TEMP).exists())
             self.assertFalse((root / LOCK).exists())
-            with self.assertRaisesRegex(pg.Hold, "UNCOMMITTED_HOUR_FILE_NOT_ADOPTABLE"):
-                pg.status(root, when)
+            self.assertEqual(
+                pg.status(root, when)["uncommitted_hour_file"],
+                {"hour": 0, "adoptable": False},
+            )
             with self.assertRaisesRegex(pg.Hold, "UNCOMMITTED_HOUR_FILE_QUARANTINED"):
                 pg.tick(root, when + timedelta(seconds=5))
             self.assertEqual(
                 [p.read_bytes() for p in (root / "quarantine").iterdir()], [torn]
             )
             self.assertEqual(pg.tick(root, when + timedelta(seconds=6))["hour"], 0)
+
+    # The two race guards below are driven through the private lock helpers,
+    # because only a forced interleaving shows them deterministically.
+
+    @unittest.skipIf(os.name == "nt", "POSIX unlink-while-locked protocol")
+    def test_a_lock_on_an_unlinked_lock_file_is_not_ownership(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = new_run(temp)
+            first = pg._lock_writer(root)
+            real_lock = pg._os_lock
+            third = []
+
+            def lock(fd):
+                if not third:
+                    # Between this writer's open and its lock, the holder
+                    # releases (unlinking the file) and a third writer
+                    # takes a fresh lock file.
+                    third.append(None)
+                    self.assertTrue(pg._unlock_writer(root, first))
+                    third[0] = pg._lock_writer(root)
+                real_lock(fd)
+
+            with mock.patch.object(pg, "_os_lock", lock):
+                with self.assertRaisesRegex(pg.Hold, "ANOTHER_WORKER_OWNS_THIS_RUN"):
+                    pg._lock_writer(root)
+            self.assertTrue(pg._unlock_writer(root, third[0]))
+
+    @unittest.skipIf(os.name == "nt", "POSIX unlink-while-locked protocol")
+    def test_lock_file_is_unlinked_while_still_locked(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = new_run(temp)
+            first = pg._lock_writer(root)
+            real = os.unlink
+            racer = []
+
+            def unlink(path, *args, **kwargs):
+                if Path(path).name == LOCK and not racer:
+                    try:
+                        racer.append(pg._lock_writer(root))
+                    except pg.Hold as exc:
+                        racer.append(str(exc))
+                return real(path, *args, **kwargs)
+
+            with mock.patch("os.unlink", unlink):
+                self.assertTrue(pg._unlock_writer(root, first))
+            self.assertEqual(racer, ["ANOTHER_WORKER_OWNS_THIS_RUN"])
+            self.assertTrue(pg._unlock_writer(root, pg._lock_writer(root)))
+
+    def test_windows_branch_follows_the_msvcrt_protocol(self):
+        # MODELED: drives the Windows code path against FakeMsvcrt. It checks
+        # names, modes, offsets and ordering only; Windows sharing and
+        # deletion semantics are not reproduced.
+        with tempfile.TemporaryDirectory() as temp:
+            root = new_run(temp)
+            fake = FakeMsvcrt()
+            with mock.patch.object(pg, "_WINDOWS", True), mock.patch.object(
+                pg, "msvcrt", fake, create=True
+            ):
+                first = pg._lock_writer(root)
+                with self.assertRaisesRegex(pg.Hold, "ANOTHER_WORKER_OWNS_THIS_RUN"):
+                    pg._lock_writer(root)
+                self.assertTrue(pg._unlock_writer(root, first))
+                r = pg.tick(root, AT + timedelta(minutes=12))
+                self.assertEqual((r["hour"], r["single_writer_lock_file_removed"]), (0, True))
+                self.assertEqual(fake.held, {})
+                self.assertEqual({(pos, n) for _, pos, n in fake.calls}, {(0, 1)})
+                # A lock failure that is not contention must not name an owner.
+                with mock.patch.object(pg, "msvcrt", FakeMsvcrt(fail_with=errno.EINVAL)):
+                    with self.assertRaises(Exception) as caught:
+                        pg.tick(root, AT + timedelta(hours=1, minutes=2))
+                self.assertIsInstance(caught.exception, OSError)
+                self.assertEqual(pg.tick(root, AT + timedelta(hours=1, minutes=3))["hour"], 1)
 
 
 if __name__ == "__main__":

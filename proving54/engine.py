@@ -12,6 +12,7 @@ GPU/Salad jobs remain subject to separate Forge launch and budget admission.
 
 from __future__ import annotations
 from datetime import datetime, timedelta, timezone
+import errno
 from fractions import Fraction
 from hashlib import sha256
 import json
@@ -601,13 +602,17 @@ def _advanced(state: dict, ev: dict, head: str) -> dict:
     return nxt
 
 
-def _adoptable(state: dict, raw: bytes) -> dict | None:
+def _adoptable(state: dict, raw: bytes, now: datetime) -> dict | None:
     """The sanctioned roll-forward test for one uncommitted next-hour file.
 
     Adopt it only when hour == hours_completed, previous_sha256 ==
     chain_head_sha256, the source digest matches and at_utc lies inside
-    that hour's slot, and only when the bytes are exactly the receipt tick
-    would have written then: all but at_utc is recomputed, none is trusted.
+    that hour's slot, no earlier than this run's bootstrap and no later than
+    `now`; and only when the bytes are exactly the receipt tick would have
+    written then. Everything but at_utc is recomputed. at_utc itself is
+    self-reported and receipts are unsigned with no run identity, so a
+    byte-exact file planted by someone who can write the run directory
+    cannot be told apart from an interrupted tick's receipt.
     """
     hour = state["hours_completed"]
     if not 0 <= hour < 54:
@@ -625,6 +630,7 @@ def _adoptable(state: dict, raw: bytes) -> dict | None:
         and record.get("previous_sha256") == state["chain_head_sha256"]
         and record.get("source_registry_sha256") == state["source_registry_sha256"]
         and start + timedelta(hours=hour) <= at < start + timedelta(hours=hour + 1)
+        and utc(state["bootstrapped_at_utc"]) <= at <= utc(now)
     ):
         return None
     ev = episode(hour, state["toy_cpu_policy_weights"])
@@ -637,8 +643,12 @@ def _os_lock(fd: int) -> None:
         os.lseek(fd, 0, os.SEEK_SET)
         try:
             msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
-        except OSError:
-            raise Hold("ANOTHER_WORKER_OWNS_THIS_RUN") from None
+        except OSError as exc:
+            # The CRT reports a held region as EACCES (EDEADLOCK after LK_LOCK
+            # retries); anything else is a real error, not an owner.
+            if exc.errno in (errno.EACCES, getattr(errno, "EDEADLOCK", errno.EDEADLK)):
+                raise Hold("ANOTHER_WORKER_OWNS_THIS_RUN") from None
+            raise
     else:
         try:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -803,8 +813,12 @@ def _roll_forward(
     root: Path, state: dict, extra: Path, now: datetime
 ) -> tuple[dict, dict]:
     """Commit the one uncommitted receipt if _adoptable, else quarantine it."""
-    raw = extra.read_bytes()
-    record = _adoptable(state, raw)
+    with extra.open("r+b") as stream:
+        raw = stream.read()
+        # Its writer may have died between write() and fsync(); make it
+        # durable before state.json names it.
+        os.fsync(stream.fileno())
+    record = _adoptable(state, raw, now)
     if record is None:
         try:
             _quarantine(root, extra, now)
@@ -813,6 +827,11 @@ def _roll_forward(
         raise Hold("UNCOMMITTED_HOUR_FILE_QUARANTINED")
     ev = record["episode"]
     nxt = _advanced(state, ev, digest(raw))
+    adopted = state.get("adopted_hours", [])
+    require(type(adopted) is list, "SESSION_SCHEMA")
+    # An operational record that this hour was committed by roll-forward;
+    # like the rest of state.json it is unsigned.
+    nxt["adopted_hours"] = adopted + [ev["hour"]]
     try:
         _atomic_write(root / "state.json", packed(nxt))
     except OSError:
@@ -856,6 +875,7 @@ def _tick_locked(root: Path, current: datetime) -> dict:
     _, extra = _read_ledger(root, state)
     start = utc(state["started_at_utc"])
     deadline = utc(state["expires_at_utc"])
+    # Nothing in the run changes outside its window, roll-forward included.
     require(start <= current < deadline, "OUTSIDE_54H_WINDOW")
     quarantined = []
     temp = _temp_for(state_path)
@@ -866,11 +886,28 @@ def _tick_locked(root: Path, current: datetime) -> dict:
             quarantined.append(_quarantine(root, temp, current))
         except OSError:
             raise Hold("ATOMIC_WRITE_CONFLICT") from None
-    adopted_ev = None
-    if extra is not None:
-        state, adopted_ev = _roll_forward(root, state, extra, current)
+    if extra is None:
+        return _record_hour(root, current, state, None, quarantined)
+    state, adopted_ev = _roll_forward(root, state, extra, current)
+    try:
+        return _record_hour(root, current, state, adopted_ev, quarantined)
+    except Hold as exc:
+        # The adopted hour stays committed even though this tick holds.
+        exc.adopted_hour = adopted_ev["hour"]
+        raise
+
+
+def _record_hour(
+    root: Path,
+    current: datetime,
+    state: dict,
+    adopted_ev: dict | None,
+    quarantined: list,
+) -> dict:
+    """Record the current slot's hour, unless adoption just committed it."""
+    state_path = root / "state.json"
     adopted_hour = None if adopted_ev is None else adopted_ev["hour"]
-    slot = int((current - start).total_seconds() // 3600)
+    slot = int((current - utc(state["started_at_utc"])).total_seconds() // 3600)
     require(0 <= slot < 54, "HOUR_OUTSIDE_WINDOW")
     if slot == adopted_hour:
         return _summary(
@@ -934,14 +971,14 @@ def status(root: Path, now: datetime) -> dict:
     root = Path(root)
     s = _read_session(root / "state.json")
     events, extra = _read_ledger(root, s)
-    pending = None
+    uncommitted = None
     if extra is not None:
-        # Read-only: the next tick adopts it or quarantines it.
-        require(
-            _adoptable(s, extra.read_bytes()) is not None,
-            "UNCOMMITTED_HOUR_FILE_NOT_ADOPTABLE",
-        )
-        pending = s["hours_completed"]
+        # Read-only and reported, never fatal: a tick inside the window
+        # adopts the file or quarantines it; after the window none does.
+        uncommitted = {
+            "hour": s["hours_completed"],
+            "adoptable": _adoptable(s, extra.read_bytes(), now) is not None,
+        }
     quarantine = root / QUARANTINE
     elapsed = max(0, (utc(now) - utc(s["started_at_utc"])).total_seconds() / 3600)
     unresolved = sorted(
@@ -986,7 +1023,8 @@ def status(root: Path, now: datetime) -> dict:
         "toy_cpu_calibration_updates": sum(
             e["episode"]["toy_cpu_learning"]["iterations"] for e in events
         ),
-        "uncommitted_hour_pending_roll_forward": pending,
+        "uncommitted_hour_file": uncommitted,
+        "adopted_hours": s.get("adopted_hours", []),
         # Presence, not liveness: the OS lock dies with its writer, and a
         # file left behind does not block the next tick.
         "single_writer_lock_file_present": _present(root / LOCK_NAME),
