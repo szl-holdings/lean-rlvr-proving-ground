@@ -1,11 +1,16 @@
 """Proof-ground CPU-only and no-false-green tests; no network, GPU or providers."""
 
 from __future__ import annotations
+import contextlib
 from datetime import datetime, timedelta, timezone
 from fractions import Fraction
+import io
+import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 from proving54 import engine as pg
 
@@ -214,7 +219,8 @@ class TimeboxTests(unittest.TestCase):
                     with self.assertRaisesRegex(pg.Hold, reason):
                         pg.tick(root, later + timedelta(minutes=10))
                     self.assertEqual(list((root / "hours").glob("*.json")), [])
-                    self.assertFalse((root / ".single-writer.lock").exists())
+                    with pg._single_writer(root):
+                        pass
             state_path.write_bytes(original)
             self.assertEqual(pg.tick(root, AT + timedelta(minutes=10))["hour"], 0)
 
@@ -240,6 +246,231 @@ class TimeboxTests(unittest.TestCase):
             self.assertEqual(
                 pg.status(root, AT + timedelta(hours=6))["hours_recorded"], 1
             )
+
+    def test_consistent_rebase_is_refused(self):
+        shift = timedelta(hours=27)
+        for fields in (
+            ("started_at_utc", "expires_at_utc"),
+            ("started_at_utc", "expires_at_utc", "bootstrapped_at_utc"),
+        ):
+            with self.subTest(fields=fields), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp) / "new"
+                pg.init_run(root, AT + timedelta(minutes=5))
+                state_path = root / "state.json"
+                state = pg.strict_load(state_path.read_bytes())
+                for field in fields:
+                    state[field] = (pg.utc(state[field]) + shift).isoformat()
+                state_path.write_bytes(pg.packed(state))
+                with self.assertRaisesRegex(pg.Hold, "SESSION_WINDOW_NOT_BOUND_TO_SOURCE"):
+                    pg.tick(root, AT + shift + timedelta(minutes=10))
+                self.assertEqual(list((root / "hours").glob("*.json")), [])
+
+    def test_late_bootstrap_does_not_shift_slots(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            pg.init_run(root, AT + timedelta(minutes=50))
+            with self.assertRaisesRegex(pg.Hold, "SKIPPED_OR_DUPLICATE_HOUR"):
+                pg.tick(root, AT + timedelta(hours=1, minutes=20))
+            self.assertEqual(list((root / "hours").glob("*.json")), [])
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            pg.init_run(root, AT + timedelta(minutes=50))
+            self.assertEqual(pg.tick(root, AT + timedelta(minutes=55))["hour"], 0)
+            self.assertEqual(
+                pg.tick(root, AT + timedelta(hours=1, minutes=10))["hour"], 1
+            )
+
+    def test_tampered_middle_hour_breaks_chain(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            pg.init_run(root, AT)
+            pg.tick(root, AT + timedelta(minutes=2))
+            pg.tick(root, AT + timedelta(hours=1, minutes=2))
+            p = root / "hours" / "hour-00.json"
+            p.write_bytes(p.read_bytes().replace(b"FOUNDATION", b"UNTRUSTED!"))
+            with self.assertRaisesRegex(pg.Hold, "LEDGER_PARENT_OR_HOUR_MISMATCH"):
+                pg.status(root, AT + timedelta(hours=1, minutes=30))
+            with self.assertRaisesRegex(pg.Hold, "LEDGER_PARENT_OR_HOUR_MISMATCH"):
+                pg.tick(root, AT + timedelta(hours=2, minutes=2))
+            self.assertEqual(
+                sorted(x.name for x in (root / "hours").glob("*.json")),
+                ["hour-00.json", "hour-01.json"],
+            )
+
+    def test_slot_is_floor_of_source_hours(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            pg.init_run(root, AT)
+            self.assertEqual(
+                pg.tick(root, AT + timedelta(minutes=14, seconds=28))["hour"], 0
+            )
+            with self.assertRaisesRegex(pg.Hold, "SKIPPED_OR_DUPLICATE_HOUR"):
+                pg.tick(root, AT + timedelta(minutes=44, seconds=28))
+            self.assertEqual(
+                pg.tick(root, AT + timedelta(hours=1, minutes=59, seconds=59))["hour"],
+                1,
+            )
+            self.assertEqual(pg.tick(root, AT + timedelta(hours=2))["hour"], 2)
+
+    def test_observed_times_are_evidence(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            seen = AT + timedelta(minutes=37, seconds=5)
+            first = pg.init_run(root, seen)
+            self.assertEqual(first["time"], seen.isoformat())
+            self.assertEqual(first["bootstrap_observed_at_utc"], seen.isoformat())
+            self.assertEqual(first["window_start"], AT.isoformat())
+            self.assertEqual(pg.strict_load((root / "bootstrap.json").read_bytes()), first)
+            ticked = AT + timedelta(minutes=41, seconds=9)
+            pg.tick(root, ticked)
+            record = pg.strict_load((root / "hours" / "hour-00.json").read_bytes())
+            self.assertEqual(record["at_utc"], ticked.isoformat())
+            st = pg.status(root, ticked)
+            self.assertEqual(st["bootstrap_observed_at_utc"], seen.isoformat())
+            self.assertEqual(st["source_window_start_utc"], AT.isoformat())
+            self.assertEqual(
+                st["elapsed_hours"], round((ticked - AT).total_seconds() / 3600, 2)
+            )
+
+    def test_cli_uses_actual_utc_clock(self):
+        from proving54 import cli
+
+        seen = AT + timedelta(minutes=7, seconds=3)
+
+        class Clock(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return seen if tz is not None else seen.replace(tzinfo=None)
+
+        with tempfile.TemporaryDirectory() as temp, mock.patch.object(
+            cli, "datetime", Clock
+        ):
+            root = Path(temp) / "new"
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = cli.main(["init", "--run", str(root)])
+            self.assertEqual(rc, 0, out.getvalue())
+            self.assertEqual(
+                json.loads(out.getvalue())["bootstrap_observed_at_utc"], seen.isoformat()
+            )
+
+
+class CrashSafetyTests(unittest.TestCase):
+    def test_leftover_state_temp_is_quarantined_not_trusted(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            pg.init_run(root, AT)
+            (root / "state.json.temporary").write_bytes(b"left by a killed save")
+            self.assertEqual(pg.tick(root, AT + timedelta(minutes=10))["hour"], 0)
+            self.assertFalse((root / "state.json.temporary").exists())
+            moved = [x.name for x in (root / "quarantine").glob("*")]
+            self.assertEqual(len(moved), 1)
+            self.assertTrue(moved[0].startswith("state.json.temporary."))
+            st = pg.status(root, AT + timedelta(minutes=11))
+            self.assertEqual(st["hours_recorded"], 1)
+            self.assertEqual(st["quarantined_files"], moved)
+
+    def test_transient_replace_failure_is_retried(self):
+        real = os.replace
+        calls = {"n": 0}
+
+        def flaky(a, b):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise PermissionError("held by another process")
+            return real(a, b)
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            pg.init_run(root, AT)
+            with mock.patch("proving54.engine.os.replace", side_effect=flaky), mock.patch(
+                "proving54.engine.time.sleep"
+            ):
+                self.assertEqual(pg.tick(root, AT + timedelta(minutes=10))["hour"], 0)
+            self.assertEqual(calls["n"], 2)
+            self.assertEqual(pg.status(root, AT + timedelta(minutes=11))["hours_recorded"], 1)
+
+    def test_failed_state_save_is_adopted_by_the_next_tick(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            pg.init_run(root, AT)
+            pg.tick(root, AT + timedelta(minutes=5))
+            with mock.patch(
+                "proving54.engine.os.replace", side_effect=PermissionError("held")
+            ), mock.patch("proving54.engine.time.sleep"):
+                with self.assertRaisesRegex(pg.Hold, "HOUR_WRITTEN_STATE_NOT_COMMITTED"):
+                    pg.tick(root, AT + timedelta(hours=1, minutes=5))
+            self.assertTrue((root / "hours" / "hour-01.json").exists())
+            self.assertFalse((root / "state.json.temporary").exists())
+            st = pg.status(root, AT + timedelta(hours=1, minutes=6))
+            self.assertEqual(st["hours_recorded"], 1)
+            self.assertTrue(st["uncommitted_hour_pending"])
+            # Same slot: hour 1 is adopted, then this call is a duplicate.
+            with self.assertRaisesRegex(pg.Hold, "SKIPPED_OR_DUPLICATE_HOUR"):
+                pg.tick(root, AT + timedelta(hours=1, minutes=35))
+            st = pg.status(root, AT + timedelta(hours=1, minutes=36))
+            self.assertEqual(st["hours_recorded"], 2)
+            self.assertEqual(st["recovered_hours"], [1])
+            self.assertFalse(st["uncommitted_hour_pending"])
+            self.assertEqual(pg.tick(root, AT + timedelta(hours=2, minutes=5))["hour"], 2)
+            self.assertEqual(pg.status(root, AT + timedelta(hours=2, minutes=6))["hours_recorded"], 3)
+
+    def test_untrusted_uncommitted_hour_is_quarantined(self):
+        for case in ("wrong_parent", "outside_its_slot", "not_json"):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp) / "new"
+                pg.init_run(root, AT)
+                pg.tick(root, AT + timedelta(minutes=5))
+                good = pg.strict_load((root / "hours" / "hour-00.json").read_bytes())
+                fake = dict(good, hour=1, phase=pg.phase(1))
+                if case == "wrong_parent":
+                    fake["previous_sha256"] = "0" * 64
+                    fake["at_utc"] = (AT + timedelta(hours=1, minutes=1)).isoformat()
+                    raw = pg.packed(fake)
+                elif case == "outside_its_slot":
+                    fake["previous_sha256"] = pg.digest((root / "hours" / "hour-00.json").read_bytes())
+                    fake["at_utc"] = (AT + timedelta(hours=2, minutes=1)).isoformat()
+                    raw = pg.packed(fake)
+                else:
+                    raw = b"{not json"
+                (root / "hours" / "hour-01.json").write_bytes(raw)
+                with self.assertRaisesRegex(pg.Hold, "UNCOMMITTED_HOUR_QUARANTINED"):
+                    pg.tick(root, AT + timedelta(hours=1, minutes=5))
+                self.assertEqual(
+                    sorted(x.name for x in (root / "hours").glob("*.json")), ["hour-00.json"]
+                )
+                self.assertEqual(len(list((root / "quarantine").glob("hour-01.json.*"))), 1)
+                self.assertEqual(pg.tick(root, AT + timedelta(hours=1, minutes=10))["hour"], 1)
+
+    def test_stale_lock_file_does_not_block_but_a_live_lock_does(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "new"
+            pg.init_run(root, AT)
+            (root / ".single-writer.lock").write_bytes(b"left by a killed worker")
+            self.assertEqual(pg.tick(root, AT + timedelta(minutes=5))["hour"], 0)
+            with pg._single_writer(root):
+                with self.assertRaisesRegex(pg.Hold, "ANOTHER_WORKER_OWNS_THIS_RUN"):
+                    pg.tick(root, AT + timedelta(hours=1, minutes=5))
+            self.assertEqual(pg.tick(root, AT + timedelta(hours=1, minutes=6))["hour"], 1)
+
+
+class OperatorRunnerTests(unittest.TestCase):
+    RUNNER = Path(__file__).resolve().parents[1] / "proving54" / "operator" / "tick54.ps1"
+
+    def test_runner_is_bounded_and_reads_the_window_from_the_manifest(self):
+        raw = self.RUNNER.read_bytes()
+        self.assertTrue(all(b < 128 for b in raw), "runner must be ASCII for PowerShell 5.1")
+        self.assertNotIn(b"\r", raw)
+        text = raw.decode("ascii")
+        self.assertEqual(text.count("Invoke-Cli 'init'"), 1)
+        self.assertEqual(text.count("Invoke-Cli 'tick'"), 1)
+        self.assertIn("Get-Field $manifest 'window'", text)
+        self.assertNotRegex(text, r"20\d\d-\d\d-\d\dT\d\d:\d\d")
+        lowered = text.lower()
+        for forbidden in ("remove-item", "stop-process", "set-itemproperty", "schtasks",
+                          "register-scheduledtask", "set-executionpolicy", "invoke-webrequest",
+                          "start-process", "restart-computer", "shutil", " del ", "rmdir"):
+            self.assertNotIn(forbidden, lowered)
 
 
 if __name__ == "__main__":

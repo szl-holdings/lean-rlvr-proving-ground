@@ -11,6 +11,7 @@ GPU/Salad jobs remain subject to separate Forge launch and budget admission.
 """
 
 from __future__ import annotations
+import contextlib
 from datetime import datetime, timedelta, timezone
 from fractions import Fraction
 from hashlib import sha256
@@ -21,7 +22,13 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import time
 from typing import Any
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 from proving54 import admission as approved_source
 
@@ -517,34 +524,143 @@ def init_run(output_dir: Path, now: datetime) -> dict:
             shutil.rmtree(staging)
 
 
-def _read_events(root: Path, state: dict) -> list:
-    hour_dir = root / "hours"
-    files = sorted(hour_dir.glob("hour-*.json"))
-    require(len(files) == state["hours_completed"], "HOUR_FILE_COUNT_MISMATCH")
+def _hour_files(root: Path) -> list:
+    return sorted((root / "hours").glob("hour-*.json"))
+
+
+def _verify_chain(files: list, head) -> list:
     prev = None
     result = []
     for h, p in enumerate(files):
-        record = strict_load(p.read_bytes())
+        raw = p.read_bytes()
+        record = strict_load(raw)
         require(
-            record.get("hour") == h
+            isinstance(record, dict)
+            and record.get("hour") == h
             and record.get("previous_sha256") == prev
             and record.get("schema") == "szl.proving54-hour-record/v1",
             "LEDGER_PARENT_OR_HOUR_MISMATCH",
         )
-        prev = digest(p.read_bytes())
+        prev = digest(raw)
         result.append(record)
-    require(prev == state["chain_head_sha256"], "TRUSTED_SESSION_HEAD_MISMATCH")
+    require(prev == head, "TRUSTED_SESSION_HEAD_MISMATCH")
     return result
+
+
+def _read_events(root: Path, state: dict) -> list:
+    files = _hour_files(root)
+    require(len(files) == state["hours_completed"], "HOUR_FILE_COUNT_MISMATCH")
+    return _verify_chain(files, state["chain_head_sha256"])
 
 
 def _atomic_write(path: Path, bytestring: bytes) -> None:
     temp = path.with_name(path.name + ".temporary")
     require(not temp.exists(), "ATOMIC_WRITE_CONFLICT")
-    with temp.open("xb") as stream:
-        stream.write(bytestring)
-        stream.flush()
-        os.fsync(stream.fileno())
-    os.replace(temp, path)
+    try:
+        with temp.open("xb") as stream:
+            stream.write(bytestring)
+            stream.flush()
+            os.fsync(stream.fileno())
+        # Windows refuses a replace while another process (a scanner or an
+        # indexer) holds the target without FILE_SHARE_DELETE; that clears fast.
+        for attempt in range(6):
+            try:
+                os.replace(temp, path)
+                return
+            except PermissionError:
+                if attempt == 5:
+                    raise
+                time.sleep(0.05 * (2**attempt))
+    except BaseException:
+        with contextlib.suppress(OSError):
+            temp.unlink()
+        raise
+
+
+def _quarantine(root: Path, path: Path, raw: bytes) -> Path:
+    """Move a file the run cannot trust out of the way. Never delete it."""
+    folder = root / "quarantine"
+    folder.mkdir(exist_ok=True)
+    target = folder / f"{path.name}.{digest(raw)[:16]}"
+    os.replace(path, target)
+    return target
+
+
+@contextlib.contextmanager
+def _single_writer(root: Path):
+    """An OS lock on a persistent file, so a worker that dies releases it."""
+    fd = os.open(root / ".single-writer.lock", os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        try:
+            if os.name == "nt":
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            raise Hold("ANOTHER_WORKER_OWNS_THIS_RUN") from None
+        try:
+            yield
+        finally:
+            with contextlib.suppress(OSError):
+                if os.name == "nt":
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
+def _adopt_uncommitted_hour(root: Path, state: dict) -> dict:
+    """Roll forward one receipt that a tick wrote but could not commit.
+
+    A tick fsyncs hour-N before it saves state.json, so a failed or killed save
+    leaves hour-N on disk uncounted. Adopt it only when it is exactly the next
+    link, written inside its own slot, for this source; anything else goes to
+    quarantine/ and the call holds. Adopted hours are listed in recovered_hours.
+    """
+    files = _hour_files(root)
+    n = state["hours_completed"]
+    if len(files) != n + 1:
+        return state
+    _verify_chain(files[:n], state["chain_head_sha256"])
+    orphan = files[-1]
+    raw = orphan.read_bytes()
+    start = utc(state["started_at_utc"])
+    try:
+        record = strict_load(raw)
+        require(isinstance(record, dict), "UNCOMMITTED_HOUR_NOT_OBJECT")
+        at = utc(record.get("at_utc"))
+        weights = record["episode"]["next_toy_cpu_policy_weights"]
+        valid = (
+            orphan.name == f"hour-{n:02d}.json"
+            and 0 <= n < 54
+            and record.get("schema") == "szl.proving54-hour-record/v1"
+            and record.get("hour") == n
+            and record.get("phase") == phase(n)
+            and record.get("previous_sha256") == state["chain_head_sha256"]
+            and record.get("source_registry_sha256") == state["source_registry_sha256"]
+            and start + timedelta(hours=n) <= at < start + timedelta(hours=n + 1)
+            and type(weights) is list
+            and len(weights) == 5
+            and all(
+                type(v) is float and math.isfinite(v) and -8 <= v <= 8
+                for v in weights
+            )
+        )
+    except (Hold, KeyError, TypeError):
+        valid = False
+    if not valid:
+        _quarantine(root, orphan, raw)
+        raise Hold("UNCOMMITTED_HOUR_QUARANTINED")
+    state["chain_head_sha256"] = digest(raw)
+    state["hours_completed"] = n + 1
+    state["last_hour"] = n
+    state["phase"] = record["phase"]
+    state["toy_cpu_policy_weights"] = weights
+    state["recovered_hours"] = list(state.get("recovered_hours", [])) + [n]
+    _atomic_write(root / "state.json", packed(state))
+    return state
 
 
 def tick(root: Path, now: datetime) -> dict:
@@ -559,14 +675,14 @@ def tick(root: Path, now: datetime) -> dict:
         == digest(REGISTRY.read_bytes()),
         "RUN_COPY_SOURCE_DRIFT",
     )
-    lock = root / ".single-writer.lock"
-    try:
-        with lock.open("xb") as f:
-            f.write(current.isoformat().encode())
-    except FileExistsError:
-        raise Hold("ANOTHER_WORKER_OWNS_THIS_RUN") from None
-    try:
+    with _single_writer(root):
+        temp = root / "state.json.temporary"
+        if temp.exists():
+            # Left by an earlier call that died mid-save; state.json is the
+            # committed copy, so the leftover is moved aside, not trusted.
+            _quarantine(root, temp, temp.read_bytes())
         state = _read_session(root / "state.json")
+        state = _adopt_uncommitted_hour(root, state)
         _read_events(root, state)
         start = utc(state["started_at_utc"])
         deadline = utc(state["expires_at_utc"])
@@ -599,7 +715,11 @@ def tick(root: Path, now: datetime) -> dict:
         state["last_hour"] = slot
         state["phase"] = ev["phase"]
         state["toy_cpu_policy_weights"] = ev["next_toy_cpu_policy_weights"]
-        _atomic_write(root / "state.json", packed(state))
+        try:
+            _atomic_write(root / "state.json", packed(state))
+        except OSError:
+            # The receipt is on disk; the next tick adopts it if it is valid.
+            raise Hold("HOUR_WRITTEN_STATE_NOT_COMMITTED") from None
         return {
             "state": "HOUR_RECORDED_REVIEW_ONLY",
             "hour": slot,
@@ -613,14 +733,18 @@ def tick(root: Path, now: datetime) -> dict:
             "gpu_jobs_started": 0,
             "deployment_authorized": False,
         }
-    finally:
-        if lock.exists():
-            lock.unlink()
 
 
 def status(root: Path, now: datetime) -> dict:
-    s = _read_session(Path(root) / "state.json")
-    events = _read_events(Path(root), s)
+    root = Path(root)
+    s = _read_session(root / "state.json")
+    files = _hour_files(root)
+    pending = len(files) == s["hours_completed"] + 1
+    if pending:
+        events = _verify_chain(files[:-1], s["chain_head_sha256"])
+    else:
+        events = _read_events(root, s)
+    quarantined = sorted(x.name for x in (root / "quarantine").glob("*"))
     elapsed = max(0, (utc(now) - utc(s["started_at_utc"])).total_seconds() / 3600)
     unresolved = sorted(
         {
@@ -634,6 +758,9 @@ def status(root: Path, now: datetime) -> dict:
     return {
         "schema": "szl.proving54-readback/v1",
         "hours_recorded": s["hours_completed"],
+        "uncommitted_hour_pending": pending,
+        "recovered_hours": list(s.get("recovered_hours", [])),
+        "quarantined_files": quarantined,
         "elapsed_hours": round(elapsed, 2),
         "required_hours": 54,
         "bootstrap_observed_at_utc": s["bootstrapped_at_utc"],

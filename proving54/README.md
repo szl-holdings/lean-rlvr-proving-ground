@@ -1,12 +1,13 @@
 # SZL 54-Hour Five-Role Proving Ground — Source and Admission
 
-**Research clock (window 2):** 2026-11-19T10:05:32Z → 2026-11-21T16:05:32Z.
+**Research clock (window 3):** 2026-11-19T17:05:32Z → 2026-11-21T23:05:32Z.
 **SOURCE/HARD-GATE STARTED; GPU TRAINING NOT ADMITTED.**
 
 | Window | Source clock (UTC) | Status |
 |---|---|---|
 | 1 | 2026-11-18T05:05:32Z → 2026-11-20T11:05:32Z | **BLOCKED.** No run was initialized during its hour zero, so 0 of 54 hourly receipts exist. It was not backfilled, replayed or restarted on a shifted clock. Its manifest stays in history at `23c9478`. |
-| 2 | 2026-11-19T10:05:32Z → 2026-11-21T16:05:32Z | **HOLD_SOURCE_PROPOSAL.** A run may start only during hour zero, `[start, start + 1h)`. |
+| 2 | 2026-11-19T10:05:32Z → 2026-11-21T16:05:32Z | **BLOCKED.** Merged and scheduled, but both hour-zero firings ran from a cloud session whose laptop commands waited for an approval prompt that no one answered, so no run was initialized. 0 of 54 receipts; not backfilled or replayed. Its manifest stays in history at `a76fe16`. |
+| 3 | 2026-11-19T17:05:32Z → 2026-11-21T23:05:32Z | **HOLD_SOURCE_PROPOSAL.** A run may start only during hour zero, `[start, start + 1h)`. Hourly ticks come from a scheduled task on the operator laptop, not from a cloud session. |
 
 Window 1 is recorded here, not erased. At `23c9478` the CLI's `init`
 accepted any time and opened a fresh 54-hour session from that moment,
@@ -151,12 +152,25 @@ overwritten:
 
 An operator may call `tick` at most once per **consecutive elapsed
 UTC hour**; skipped hours, duplicate hours, source-policy drift, broken
-hash chains or a live single-writer lock cause HOLD. One missed hour
-ends the run: every later `tick` returns `SKIPPED_OR_DUPLICATE_HOUR`, and
-the gap is never filled in afterwards. Each receipt
+hash chains or a live single-writer lock cause HOLD. One missed hour ends
+the run for the CLI: every later `tick` inside the window returns
+`SKIPPED_OR_DUPLICATE_HOUR`, and after the window it returns
+`OUTSIDE_54H_WINDOW`. The CLI cannot fill the gap, but the engine's pure
+`tick` accepts any timestamp and each hour record's `at_utc` is
+self-reported and unsigned, so the receipts alone cannot show that a gap was
+not filled in later; that rests on operator procedure.
+
+The single-writer lock is an OS lock (`msvcrt.locking` on Windows,
+`fcntl.flock` elsewhere) on a file that is never deleted, so a worker that
+dies releases it. A tick writes its hour file before it saves `state.json`;
+if that save fails (`HOUR_WRITTEN_STATE_NOT_COMMITTED`) or the process dies,
+the next tick adopts the uncounted hour file only when it is exactly the next
+link, written inside its own slot, for this source, and lists it in
+`recovered_hours`. Anything else, including a leftover `state.json.temporary`,
+is moved to `quarantine/` and never deleted. Each receipt
 includes source/previous hashes and exact named tasks, but an unsigned
 SHA-256 chain is **not proof of author identity**. Success in its
-16 regression tests does not grant model deployment authority.
+28 regression tests does not grant model deployment authority.
 
 The private hourly steward scheduled outside GitHub may invoke this
 *one-shot* command if the authorized device is connected and the
@@ -207,13 +221,16 @@ independently unverified or actually open scientific targets remain
 **HOLD**. Honest abstention can be rewarded for *training behavior* but
 is not a mathematical solution or a production promotion.
 
-The window-1 hourly steward (54 occurrences through November 20, 2026)
-was disabled after its hour zero passed without a run. A window-2
-scheduler lives outside this repository and may call only `init` during
-hour zero and at most one `tick` per hour; scheduling alone does not prove
-execution, and only the hour files on the operator machine count. No
-scheduler can bypass any existing trainer, budget, GPU, publisher or
-service-control gate.
+The window-1 steward (54 occurrences through November 20, 2026) was
+disabled after its hour zero passed without a run. Window 2 was lost because
+its hourly ticks depended on cloud-session approvals. For window 3 the
+reviewed runner `proving54/operator/tick54.ps1` is called by one scheduled
+task on the operator laptop at :20 and :50 UTC. It reads the window from the
+pinned manifest, refuses a checkout that is not the expected clean commit,
+may call `init` only during hour zero and `tick` at most once per call, and
+appends one JSON line per call to the ledger beside the run. Scheduling
+alone does not prove execution: only the hour files count. No scheduler can
+bypass any existing trainer, budget, GPU, publisher or service-control gate.
 
 **Current result: source policy and arithmetic proof staging; physical
 five-node mesh, actual 54-hour GPU training, solved grand challenges,
