@@ -16,6 +16,8 @@ jobs:
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
       - name: Kernel-check seed probes (lake build)
         run: lake build
+      - name: Sorry / axiom gate (fail-closed; kernel #print axioms per theorem)
+        run: python3 .github/scripts/lean_axiom_gate.py .
       - name: Referee self-test (fail-closed)
         run: python3 selftest.py
       - name: Test chain-gate failure propagation with synthetic receipts

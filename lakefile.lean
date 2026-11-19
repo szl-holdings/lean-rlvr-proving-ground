@@ -17,3 +17,10 @@ lean_lib Probes where
 lean_lib Proving54 where
   srcDir := "probes"
   roots := #[`Proving54]
+
+-- Research-only support algebra (SZL.BoundaryResearch). Core Lean, no Mathlib.
+-- Previously never built by `lake build`; now kernel-checked by default.
+@[default_target]
+lean_lib SupportBoundary where
+  srcDir := "research/boundary_lab"
+  roots := #[`SupportBoundary]
