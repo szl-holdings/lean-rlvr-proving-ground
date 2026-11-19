@@ -46,7 +46,10 @@ EXPECTED_PHASES = (
     ("SKILLS", 24, 48),
     ("PROOF", 48, 54),
 )
-START = datetime(2026, 11, 18, 5, 5, 32, tzinfo=timezone.utc)
+# Window 2. Window 1 (2026-11-18T05:05:32Z) was never initialized in its hour
+# zero and stays BLOCKED; see proving54/README.md. Moving this clock is a
+# reviewed source change, never a runtime option.
+START = datetime(2026, 11, 19, 10, 5, 32, tzinfo=timezone.utc)
 MAX_INPUT_BYTES = 100_000
 
 
