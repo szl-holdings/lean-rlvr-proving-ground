@@ -751,15 +751,40 @@ def _discard(path: Path) -> None:
         pass
 
 
-def _move(src: Path, dst: Path, *, replace: bool) -> None:
-    """Rename, retried briefly while Windows reports a sharing violation."""
+def _retry_sharing_violations(operation):
+    """Run `operation`, retried briefly while Windows reports a sharing
+    violation (PermissionError) because another process holds the file."""
     for delay in REPLACE_RETRY_DELAYS:
         try:
-            (os.replace if replace else os.rename)(src, dst)
-            return
+            return operation()
         except PermissionError:
             time.sleep(delay)
-    (os.replace if replace else os.rename)(src, dst)
+    return operation()
+
+
+def _move(src: Path, dst: Path, *, replace: bool) -> None:
+    _retry_sharing_violations(lambda: (os.replace if replace else os.rename)(src, dst))
+
+
+def _flush_file(path: Path) -> None:
+    """fsync bytes that a dead writer may have left unflushed.
+
+    POSIX fsync works through a read-only descriptor. Windows needs a write
+    handle, which a reader that shares read only refuses while it is open.
+    """
+    if not _WINDOWS:
+        fd = os.open(path, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        return
+
+    def flush():
+        with path.open("r+b") as stream:
+            os.fsync(stream.fileno())
+
+    _retry_sharing_violations(flush)
 
 
 def _write_durably(stream, data: bytes) -> None:
@@ -813,11 +838,7 @@ def _roll_forward(
     root: Path, state: dict, extra: Path, now: datetime
 ) -> tuple[dict, dict]:
     """Commit the one uncommitted receipt if _adoptable, else quarantine it."""
-    with extra.open("r+b") as stream:
-        raw = stream.read()
-        # Its writer may have died between write() and fsync(); make it
-        # durable before state.json names it.
-        os.fsync(stream.fileno())
+    raw = extra.read_bytes()
     record = _adoptable(state, raw, now)
     if record is None:
         try:
@@ -825,6 +846,12 @@ def _roll_forward(
         except OSError:
             raise Hold("UNCOMMITTED_HOUR_FILE_NOT_ADOPTABLE") from None
         raise Hold("UNCOMMITTED_HOUR_FILE_QUARANTINED")
+    try:
+        # Its writer may have died between write() and fsync(); make it
+        # durable before state.json names it.
+        _flush_file(extra)
+    except OSError:
+        raise Hold("UNCOMMITTED_HOUR_FILE_NOT_FLUSHED") from None
     ev = record["episode"]
     nxt = _advanced(state, ev, digest(raw))
     adopted = state.get("adopted_hours", [])
@@ -844,8 +871,8 @@ def tick(root: Path, now: datetime) -> dict:
 
     A writer that dies or fails mid-commit leaves at most one receipt whose
     state commit never happened. The next tick in the window adopts it only
-    under _adoptable and quarantines it otherwise; adoption never records a
-    missed hour.
+    under _adoptable and quarantines it otherwise. Adoption writes no
+    receipt; _adoptable says what it cannot tell apart.
     """
     root = Path(root)
     current = utc(now)

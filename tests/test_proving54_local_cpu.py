@@ -588,6 +588,31 @@ class CommitRecoveryTests(unittest.TestCase):
                 pg.status(root, AT + timedelta(minutes=21))["hours_recorded"], 0
             )
 
+    def test_receipt_stamped_outside_its_own_slot_is_quarantined(self):
+        # Byte-exact except at_utc, which stays after bootstrap and before the
+        # clock: only the slot bound can refuse these.
+        def restamp(path: Path, at: datetime) -> None:
+            record = pg.strict_load(path.read_bytes())
+            record["at_utc"] = at.isoformat()
+            path.write_bytes(pg.packed(record))
+
+        later = AT + timedelta(hours=1, minutes=10)
+        with self.subTest("hour 0 stamped in hour 1"), tempfile.TemporaryDirectory() as temp:
+            root = new_run(temp)
+            lose_state_commit(root, AT + timedelta(minutes=12))
+            restamp(root / "hours" / "hour-00.json", AT + timedelta(hours=1, minutes=5))
+            with self.assertRaisesRegex(pg.Hold, "UNCOMMITTED_HOUR_FILE_QUARANTINED"):
+                pg.tick(root, later)
+            self.assertEqual(pg.status(root, later)["hours_recorded"], 0)
+        with self.subTest("hour 1 stamped in hour 0"), tempfile.TemporaryDirectory() as temp:
+            root = new_run(temp)
+            pg.tick(root, AT + timedelta(minutes=12))
+            lose_state_commit(root, AT + timedelta(hours=1, minutes=5))
+            restamp(root / "hours" / "hour-01.json", AT + timedelta(minutes=40))
+            with self.assertRaisesRegex(pg.Hold, "UNCOMMITTED_HOUR_FILE_QUARANTINED"):
+                pg.tick(root, later)
+            self.assertEqual(pg.status(root, later)["hours_recorded"], 1)
+
     def test_failed_roll_forward_commit_keeps_the_receipt_for_the_next_tick(self):
         with tempfile.TemporaryDirectory() as temp:
             root = new_run(temp)
@@ -933,6 +958,44 @@ class WriterLockTests(unittest.TestCase):
                         pg.tick(root, AT + timedelta(hours=1, minutes=2))
                 self.assertIsInstance(caught.exception, OSError)
                 self.assertEqual(pg.tick(root, AT + timedelta(hours=1, minutes=3))["hour"], 1)
+
+    def test_windows_adoption_outlasts_a_reader_that_refuses_write_access(self):
+        # MODELED: the Windows branch on any OS. fsync there needs a write
+        # handle, which a reader sharing read only refuses for a while.
+        for refusals, held in ((2, False), (10**6, True)):
+            with self.subTest(refusals=refusals), tempfile.TemporaryDirectory() as temp:
+                root = new_run(temp)
+                lose_state_commit(root, AT + timedelta(minutes=12))
+                before = (root / "state.json").read_bytes()
+                real_open = Path.open
+                writes = []
+
+                def opener(path, mode="r", *args, **kwargs):
+                    if path.name == "hour-00.json" and "+" in mode:
+                        writes.append(mode)
+                        if len(writes) <= refusals:
+                            raise PermissionError(13, "simulated sharing violation", str(path))
+                    return real_open(path, mode, *args, **kwargs)
+
+                with mock.patch.object(pg, "_WINDOWS", True), mock.patch.object(
+                    pg, "msvcrt", FakeMsvcrt(), create=True
+                ), mock.patch.object(Path, "open", opener), mock.patch("time.sleep"):
+                    if held:
+                        with self.assertRaises(Exception) as caught:
+                            pg.tick(root, AT + timedelta(minutes=40))
+                    else:
+                        try:
+                            r = pg.tick(root, AT + timedelta(minutes=40))
+                        except PermissionError:
+                            self.fail("a sharing violation on the receipt was not retried")
+                if held:
+                    self.assertEqual(str(caught.exception), "UNCOMMITTED_HOUR_FILE_NOT_FLUSHED")
+                    self.assertEqual(len(writes), len(pg.REPLACE_RETRY_DELAYS) + 1)
+                    self.assertEqual((root / "state.json").read_bytes(), before)
+                    self.assertTrue((root / "hours" / "hour-00.json").is_file())
+                else:
+                    self.assertEqual(r["state"], "UNCOMMITTED_HOUR_ADOPTED_REVIEW_ONLY")
+                    self.assertEqual(len(writes), 3)
 
 
 if __name__ == "__main__":

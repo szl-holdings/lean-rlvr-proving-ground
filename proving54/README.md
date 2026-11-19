@@ -156,7 +156,7 @@ ends the run: every later `tick` returns `SKIPPED_OR_DUPLICATE_HOUR`, and
 the gap is never filled in afterwards. Each receipt
 includes source/previous hashes and exact named tasks, but an unsigned
 SHA-256 chain is **not proof of author identity**. Success in its
-38 regression tests (five are POSIX-only and skipped on Windows) does not
+40 regression tests (five are POSIX-only and skipped on Windows) does not
 grant model deployment authority.
 
 **Crash and failed-commit recovery.** Window 2 runs the source pinned at
@@ -190,12 +190,19 @@ only if all of these hold:
 - its `at_utc` is no earlier than the run's bootstrap and no later than
   the adopting `tick`'s clock.
 
+Before adopting the file, `tick` fsyncs it. On Windows that needs write
+access, so the open is retried like `os.replace`; a persistent refusal
+holds with `UNCOMMITTED_HOUR_FILE_NOT_FLUSHED` and leaves the file for the
+next `tick`.
+
 An adopted hour is recorded in `state.json` as `adopted_hours`. When the
 adopted hour is the current one, `tick` returns
 `UNCOMMITTED_HOUR_ADOPTED_REVIEW_ONLY`, and a hold that follows an
-adoption carries `adopted_uncommitted_hour`. Any other such file is moved
-to `quarantine/` and `tick` holds with `UNCOMMITTED_HOUR_FILE_QUARANTINED`,
-or with `UNCOMMITTED_HOUR_FILE_NOT_ADOPTABLE` if the file cannot be moved.
+adoption carries `adopted_uncommitted_hour`.
+
+Any other such file is moved to `quarantine/` and `tick` holds with
+`UNCOMMITTED_HOUR_FILE_QUARANTINED`, or with
+`UNCOMMITTED_HOUR_FILE_NOT_ADOPTABLE` if the file cannot be moved.
 `status` reports the file as `uncommitted_hour_file` instead of failing. No
 tick changes the run outside its window, so a receipt left uncommitted in
 the final hour can be adopted only by a retry inside that hour.
