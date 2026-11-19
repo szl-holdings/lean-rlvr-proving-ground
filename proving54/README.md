@@ -156,7 +156,33 @@ ends the run: every later `tick` returns `SKIPPED_OR_DUPLICATE_HOUR`, and
 the gap is never filled in afterwards. Each receipt
 includes source/previous hashes and exact named tasks, but an unsigned
 SHA-256 chain is **not proof of author identity**. Success in its
-16 regression tests does not grant model deployment authority.
+30 regression tests (two use POSIX file-size limits and are skipped on
+Windows) does not grant model deployment authority.
+
+**Crash and failed-commit recovery.** Window 2 runs the source pinned at
+`a76fe16`, which predates this section. The single-writer lock is an
+operating-system lock on `.single-writer.lock` (`fcntl.flock` on POSIX,
+`msvcrt.locking` on Windows) that is released when its process dies, so a
+killed `tick` no longer leaves a lock that holds every later hour. A lock
+file left behind is reused, and `status` reports
+`single_writer_lock_file_present` (presence, not liveness). Before it
+writes an hour receipt, `tick` checks every precondition and stages the
+new `state.json`; after the receipt only one `os.replace` can fail, and it
+is retried five times over about 1.5 s while Windows reports a sharing
+violation. A leftover `state.json.temporary` is moved to `quarantine/`
+under the lock, never deleted; if it cannot be moved, `tick` holds with
+`ATOMIC_WRITE_CONFLICT` before writing any receipt. A receipt written but
+not committed returns `HOUR_RECEIPT_WRITTEN_NOT_COMMITTED`, and the CLI
+adds `uncommitted_hour`. The next `tick` in the window adopts that one file
+only if it is byte for byte the receipt `tick` would have written for
+`hour == hours_completed`, `previous_sha256 == chain_head_sha256` and the
+session's source digest, at an `at_utc` inside that hour's slot. Anything
+else is moved to `quarantine/` and `tick` holds with
+`UNCOMMITTED_HOUR_FILE_QUARANTINED`. Adoption never records a missed hour:
+the no-skip, no-replay, no-backfill and hour-zero-only rules are unchanged,
+so under a once-per-hour schedule a kill before the receipt is complete
+still costs that hour and therefore the run. CI runs on Linux and does not
+exercise the Windows lock path.
 
 The private hourly steward scheduled outside GitHub may invoke this
 *one-shot* command if the authorized device is connected and the

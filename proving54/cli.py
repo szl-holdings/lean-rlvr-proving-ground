@@ -46,7 +46,11 @@ def main(argv=None) -> int:
             out = engine.status(args.run, now)
     except (engine.Hold, OSError, ValueError) as e:
         code = str(e) if isinstance(e, engine.Hold) else type(e).__name__
-        print(json.dumps({"result": "HOLD", "reason": code}, sort_keys=True))
+        out = {"result": "HOLD", "reason": code}
+        if isinstance(e, engine.ReceiptNotCommitted):
+            # The receipt is on disk; the next tick decides whether to adopt it.
+            out["uncommitted_hour"] = e.hour
+        print(json.dumps(out, sort_keys=True))
         return 2
     print(json.dumps(out, sort_keys=True, ensure_ascii=False))
     return 0
