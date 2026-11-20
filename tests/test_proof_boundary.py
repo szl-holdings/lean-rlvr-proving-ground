@@ -61,6 +61,35 @@ class RefereeBoundaryTests(unittest.TestCase):
             with patch.object(referee, "_run_fast", side_effect=error):
                 self.assertEqual(referee.classify("fixture", STATEMENT, "rfl")["verdict"], referee.V.BUILD_ERROR)
 
+    def test_only_whole_response_abstain_marker_earns_abstention(self):
+        for marker in referee.ABSTAIN_MARKERS:
+            with self.subTest(marker=marker):
+                row = referee.classify(
+                    "fixture", STATEMENT, "  \n" + marker + "\n  ", mode="fast"
+                )
+                self.assertEqual(row["verdict"], referee.V.ABSTAIN)
+                self.assertEqual(row["flags"], ["abstain-marker:" + marker])
+
+    def test_embedded_abstain_marker_cannot_mask_rejected_attempts(self):
+        cases = (
+            ("sorry\n-- ABSTAIN", referee.V.SORRY_PRESENT),
+            ("axiom injected : False\n--ABSTAIN", referee.V.AXIOM_SMUGGLED),
+            ("native_decide\n-- ABSTAIN", referee.V.NATIVE_DECIDE),
+        )
+        for attempt, expected in cases:
+            with self.subTest(attempt=attempt):
+                row = referee.classify("fixture", STATEMENT, attempt, mode="fast")
+                self.assertEqual(row["verdict"], expected)
+                self.assertNotEqual(row["verdict"], referee.V.ABSTAIN)
+
+    def test_abstain_comment_inside_attempt_does_not_skip_referee(self):
+        with patch.object(referee, "_run_fast", return_value=(0, GOOD)) as compiler:
+            row = referee.classify(
+                "fixture", STATEMENT, "rfl\n-- ABSTAIN", mode="fast"
+            )
+        compiler.assert_called_once()
+        self.assertEqual(row["verdict"], referee.V.PROOF_ACCEPTED)
+
     def test_bad_mode_cannot_hide_behind_abstention(self):
         with self.assertRaises(ValueError):
             referee.classify("fixture", STATEMENT, "--ABSTAIN", mode="invalid")
