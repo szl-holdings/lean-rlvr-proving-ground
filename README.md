@@ -50,6 +50,13 @@ The recorded frontier pattern, built: **generate → Lean kernel referees → tr
 
 Allowed axiom base: propext, Classical.choice, Quot.sound. Anything else is disclosed and rejected.
 
+An honest abstention is the **entire trimmed attempt** (`--ABSTAIN` or
+`-- ABSTAIN`). A marker embedded in Lean source, a trailing comment, or
+an attempt also containing `sorry`, `axiom`, or `native_decide` cannot earn
+abstention credit by bypassing referee checks. This is a lexical reward
+integrity safeguard, **not** a hostile-code sandbox, independent Lean replay,
+or permission to train.
+
 ## Pipeline
 
 1. **referee.py** — splices an attempt into the probe's pinned-toolchain Lean statement and runs two check lanes:
