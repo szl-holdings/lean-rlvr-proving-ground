@@ -70,6 +70,14 @@ class RefereeBoundaryTests(unittest.TestCase):
                 self.assertEqual(row["verdict"], referee.V.ABSTAIN)
                 self.assertEqual(row["flags"], ["abstain-marker:" + marker])
 
+    def test_existing_single_line_explained_abstention_stays_valid(self):
+        row = referee.classify(
+            "fixture", STATEMENT,
+            "--ABSTAIN conjecture-class anchor: no proof claimed", mode="fast"
+        )
+        self.assertEqual(row["verdict"], referee.V.ABSTAIN)
+        self.assertEqual(row["flags"], ["abstain-marker:--ABSTAIN"])
+
     def test_embedded_abstain_marker_cannot_mask_rejected_attempts(self):
         cases = (
             ("sorry\n-- ABSTAIN", referee.V.SORRY_PRESENT),
