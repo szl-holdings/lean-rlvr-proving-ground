@@ -122,11 +122,12 @@ def classify(probe_id, statement, attempt, mode="fast", workroot=None):
     source = splice(probe_id, statement, attempt)
     flags = []
     verdict = None
-    for marker in ABSTAIN_MARKERS:
-        if marker in attempt:
-            verdict = V.ABSTAIN
-            flags.append("abstain-marker:" + marker)
-            break
+    # An abstention is the entire trimmed attempt, not a marker hidden in
+    # Lean source or a comment that could short-circuit sorry/axiom checks.
+    directive = attempt.strip()
+    if directive in ABSTAIN_MARKERS:
+        verdict = V.ABSTAIN
+        flags.append("abstain-marker:" + directive)
     if verdict is None and SORRY_RE.search(attempt):
         verdict, flags = V.SORRY_PRESENT, ["sorry"]
     if verdict is None and AXIOM_DECL_RE.search(attempt):
