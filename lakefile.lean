@@ -24,3 +24,8 @@ lean_lib Proving54 where
 lean_lib SupportBoundary where
   srcDir := "research/boundary_lab"
   roots := #[`SupportBoundary]
+
+-- Research arithmetic only; no import into the live reward or probe registry.
+@[default_target]
+lean_lib IGPR where
+  srcDir := "probes"
