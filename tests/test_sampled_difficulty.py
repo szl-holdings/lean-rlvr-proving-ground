@@ -141,6 +141,17 @@ class SampledDifficultyTests(unittest.TestCase):
                               axioms=["Bad", "propext"])
         self.assertEqual(assess_window(**changed)["accepted"], 1)
 
+    def test_only_integer_exit_one_can_count_as_an_unflagged_build_rejection(self):
+        # Start from a real-shaped BUILD_ERROR with no flags, no axiom evidence,
+        # and a known-good second sample. Rebind each changed row's digest and
+        # slot so neither context nor integrity can mask an exit-code regression.
+        args = self.inputs("bad", "trivial")
+        baseline = assess_window(**args)
+        self.assertEqual((baseline["state"], baseline["accepted"]), ("ELIGIBLE", 1))
+        for code in (0, 2, -9, None, True, 1.0, "1"):
+            with self.subTest(code=code):
+                self.assert_unknown(self.modify(args, build_exit_code=code))
+
     def test_lake_window_is_separate_from_fast_and_remains_advisory(self):
         args = self.inputs("trivial", "bad")
         with patch.object(referee, "_run_lake", return_value=(0, "'target' does not depend on any axioms")):

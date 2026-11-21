@@ -65,6 +65,7 @@ Allowed axiom base: propext, Classical.choice, Quot.sound. Anything else is disc
 
 - probes/atlas/proving-ground.json — verbatim snapshot of the 30-formula atlas from the SZLHOLDINGS/formula-proving-ground HF dataset (classes SYMBOLIC / DIMENSIONAL / EMPIRICAL / DEFINITIONAL / CONJECTURE; Conjectures are ABSTAIN anchors, never bluff targets).
 - probes/Probes.lean — v0 hand-formalized core-only fragments (Egyptian Horus-Eye sum, Kraft inequality, RS(10,6) Singleton arithmetic fragment), sorry-free and kernel-checked by lake build in CI.
+- [IGPR millipoint seed](probes/IGPR.lean): an offline model of hypothetical process credit, not a live reward function or a training example. In the actual reward table, a build error scores zero; the research formula instead uses `100 + 10*j` for an annotated failure plus an assumed natural-number margin. An accepted proof strictly dominates when `j ≤ 89` and the failure margin is no greater. At zero margins `j = 90` ties acceptance and `j = 91` exceeds it. The default build and axiom gate check these boundaries, monotonicity at equal margins, and the upper bound under a declared ceiling. No tactic-error index or margin is measured by the referee.
 - The repo is itself a core-only Lake package (NO Mathlib dependency): kernel checks run cold in seconds on any CPU/GPU node.
 
 ## Hard-math research / Putnam challenge catalog (evaluation-only)
