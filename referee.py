@@ -17,6 +17,7 @@ from pathlib import Path
 
 ALLOWED_AXIOMS = {"propext", "Classical.choice", "Quot.sound"}
 ABSTAIN_MARKERS = ("--ABSTAIN", "-- ABSTAIN")
+ABSTAIN_FORBIDDEN_RE = re.compile(r"\b(?:sorry|axiom|native_decide)\b", re.I)
 SORRY_RE = re.compile(r"(?<![\w'])sorry(?![\w'])")
 AXIOM_DECL_RE = re.compile(r"^\s*(?:private\s+|protected\s+|@\[[^\]]*\]\s*)*axiom\s+\w+", re.M)
 NATIVE_DECIDE_RE = re.compile(r"\bnative_decide\b")
@@ -122,11 +123,24 @@ def classify(probe_id, statement, attempt, mode="fast", workroot=None):
     source = splice(probe_id, statement, attempt)
     flags = []
     verdict = None
-    for marker in ABSTAIN_MARKERS:
-        if marker in attempt:
+    # An abstention is one standalone comment line, optionally with a
+    # same-line explanation. A marker embedded in Lean code or a multiline
+    # attempt must not short-circuit sorry/axiom/referee checks.
+    directive = attempt.strip()
+    marker = next(
+        (m for m in ABSTAIN_MARKERS
+         if "\n" not in directive and "\r" not in directive
+         and (directive == m or directive.startswith(m + " "))),
+        None,
+    )
+    if marker is not None:
+        # Explanations containing forbidden proof tokens cannot earn credit.
+        # Reject as malformed before invoking the Lean executor.
+        if ABSTAIN_FORBIDDEN_RE.search(directive[len(marker):]):
+            verdict, flags = V.BUILD_ERROR, ["abstain-explanation-forbidden-token"]
+        else:
             verdict = V.ABSTAIN
             flags.append("abstain-marker:" + marker)
-            break
     if verdict is None and SORRY_RE.search(attempt):
         verdict, flags = V.SORRY_PRESENT, ["sorry"]
     if verdict is None and AXIOM_DECL_RE.search(attempt):
