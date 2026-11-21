@@ -78,6 +78,21 @@ class RefereeBoundaryTests(unittest.TestCase):
         self.assertEqual(row["verdict"], referee.V.ABSTAIN)
         self.assertEqual(row["flags"], ["abstain-marker:--ABSTAIN"])
 
+    def test_abstention_explanation_forbidden_tokens_are_rejected(self):
+        attempts = (
+            "--ABSTAIN sorry",
+            "-- ABSTAIN native_decide",
+            "--ABSTAIN axiom injected",
+            "--ABSTAIN AXIOM",
+            "-- ABSTAIN sorry: no proof",
+        )
+        for attempt in attempts:
+            with self.subTest(attempt=attempt):
+                with patch.object(referee, "_run_fast", side_effect=AssertionError("must not compile")):
+                    row = referee.classify("fixture", STATEMENT, attempt, mode="fast")
+                self.assertEqual(row["verdict"], referee.V.BUILD_ERROR)
+                self.assertEqual(row["flags"], ["abstain-explanation-forbidden-token"])
+
     def test_embedded_abstain_marker_cannot_mask_rejected_attempts(self):
         cases = (
             ("sorry\n-- ABSTAIN", referee.V.SORRY_PRESENT),

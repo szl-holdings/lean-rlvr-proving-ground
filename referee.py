@@ -17,6 +17,7 @@ from pathlib import Path
 
 ALLOWED_AXIOMS = {"propext", "Classical.choice", "Quot.sound"}
 ABSTAIN_MARKERS = ("--ABSTAIN", "-- ABSTAIN")
+ABSTAIN_FORBIDDEN_RE = re.compile(r"\b(?:sorry|axiom|native_decide)\b", re.I)
 SORRY_RE = re.compile(r"(?<![\w'])sorry(?![\w'])")
 AXIOM_DECL_RE = re.compile(r"^\s*(?:private\s+|protected\s+|@\[[^\]]*\]\s*)*axiom\s+\w+", re.M)
 NATIVE_DECIDE_RE = re.compile(r"\bnative_decide\b")
@@ -133,8 +134,13 @@ def classify(probe_id, statement, attempt, mode="fast", workroot=None):
         None,
     )
     if marker is not None:
-        verdict = V.ABSTAIN
-        flags.append("abstain-marker:" + marker)
+        # Explanations containing forbidden proof tokens cannot earn credit.
+        # Reject as malformed before invoking the Lean executor.
+        if ABSTAIN_FORBIDDEN_RE.search(directive[len(marker):]):
+            verdict, flags = V.BUILD_ERROR, ["abstain-explanation-forbidden-token"]
+        else:
+            verdict = V.ABSTAIN
+            flags.append("abstain-marker:" + marker)
     if verdict is None and SORRY_RE.search(attempt):
         verdict, flags = V.SORRY_PRESENT, ["sorry"]
     if verdict is None and AXIOM_DECL_RE.search(attempt):
