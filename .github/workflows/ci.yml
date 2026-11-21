@@ -27,6 +27,7 @@ jobs:
       - name: Reward batch and pinned offline migration regressions
         run: |
           python3 -B -m unittest discover -s tests -p 'test_reward_batch.py' -v
+          python3 -B -m unittest discover -s tests -p 'test_sampled_difficulty.py' -v
           python3 -B -m unittest discover -s tests -p 'test_stage_review.py' -v
       - name: Lutar A1-A5 synthetic SFT curriculum integrity (no launch)
         run: |

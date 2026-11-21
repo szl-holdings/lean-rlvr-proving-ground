@@ -138,6 +138,53 @@ existing single-writer ledger before retrying. No batch transaction or worker
 isolation is claimed. The underlying chain requires external single-writer
 coordination; this change does not create another writer or scheduler.
 
+## Choosing probes for the next sampled rollout
+
+`sampled_difficulty.assess_window` is an optional, read-only recommendation for
+one probe after a sampling window closes. For example, if 1 of 4 observations
+was `PROOF_ACCEPTED`, recommend that training probe again. If 0 or 4 were
+accepted, do not recommend it under this rule. This is the observed fraction
+in that window, not a theorem difficulty score, a generalization estimate or an
+estimate of gradient size. The existing reward adapter still returns one
+scalar for every completion; do not filter an already-issued batch.
+
+```python
+from sampled_difficulty import assess_window
+
+# From controller-owned rollout accounting, not from a completion:
+report = assess_window(window_id=round_id, probe_id=pid, statement=registry[pid][0],
+                       probe_class=registry[pid][1], split=split, mode="fast", k=4,
+                       slots=sample_slots, entries=recorded_entries)
+if report["recommend_next"]:
+    next_probe_ids.append(pid)
+```
+
+- **Inputs:** Predeclare the probe, split, model, decoding policy, lane and
+  sample budget (2 to 256). Assign separate sample IDs; have the controller
+  retain each `(sample_id, entry_sha256)` as its actual ledger entry returns.
+  Pass those slots and the matching `chains.record` objects for this window.
+  Do not backfill missing observations or choose a favorable subset. Repeated
+  attempt text can occur naturally; reusing one ledger entry for two slots
+  cannot substitute for a second observation.
+- **Decision:** Only `0 < accepted < k` returns `ELIGIBLE`. Abstentions may
+  earn scalar credit but never count as accepted. Conjecture, holdout and test
+  contexts are `EXCLUDED`. Missing, duplicated, stale, mixed-lane or unusable
+  observations return `UNAVAILABLE` with a null count and null rate, not zero.
+  A normal compiler rejection is an observed nonacceptance, not a proof of
+  impossibility. Explicit infrastructure failures and timeouts are not scored.
+- **Trust boundary:** The report recomputes entry digests and checks the local
+  referee/toolchain, target and evidence fields. Existing receipts do **not**
+  encode sample IDs, split, model, seed or round; their correct assignment,
+  ledger provenance and independence remain the controller's responsibility.
+  A checksum is not authentication. Neither lane provides independent replay;
+  this function runs no Lean, writes nothing, grants no training authority and
+  does not stage proofs. First-token process rewards would need tactic spans
+  and trainer support; this selector supplies neither.
+
+Run the standalone contracts with
+`python3 -B -m unittest discover -s tests -p 'test_sampled_difficulty.py' -v`.
+They use disposable ledger fixtures, clean them up automatically, and require
+no compiler, model, credentials or network.
 
 ## Lutar A1–A5 numerical training curriculum (source-bound candidates)
 
