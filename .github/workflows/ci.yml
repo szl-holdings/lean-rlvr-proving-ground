@@ -3,6 +3,10 @@ on:
   push:
   pull_request:
 
+# Least privilege: both CI jobs are read-only (checkout + test suites).
+permissions:
+  contents: read
+
 jobs:
   kernel-check:
     runs-on: ubuntu-latest
