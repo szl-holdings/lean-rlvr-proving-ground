@@ -1,0 +1,30 @@
+# Isolated Lean worker image: RECIPE ONLY, not built or pushed by CI.
+# Network is used at build time only (toolchain + pinned Mathlib cache).
+# Run with no network, no credentials and a read-only root, for example:
+#   docker run --rm --network none --read-only --cap-drop ALL \
+#     --security-opt no-new-privileges --pids-limit 256 --memory 10g \
+#     --tmpfs /tmp:rw,size=1g --user 10001:10001 szl-lean-worker:<digest>
+# Inside the container, isolated_worker.py adds a bwrap layer per attempt
+# (unshared namespaces, cleared env, per-attempt tmpfs work dir).
+# ubuntu:24.04 index digest as of 2026-11-27
+FROM ubuntu:24.04@sha256:562111b88caa79c71391c0c4d3c2114a7d5c35915c20561fd893cb1e07929e6b
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends bubblewrap ca-certificates curl git python3 \
+ && rm -rf /var/lib/apt/lists/*
+
+ENV ELAN_HOME=/opt/elan PATH=/opt/elan/bin:$PATH
+RUN curl -sSfL https://raw.githubusercontent.com/leanprover/elan/v4.2.4/elan-init.sh \
+      | sh -s -- -y --default-toolchain leanprover/lean4:v4.35.0 \
+ && lean --version
+
+WORKDIR /env
+COPY lean-toolchain referee.py isolated_worker.py rewards.py chains.py grpo_adapter.py ./
+COPY worker/ ./worker/
+RUN ./worker/setup_mathlib_workspace.sh /opt/mathlib-ws \
+ && chmod -R a-w /opt/mathlib-ws /opt/elan
+
+RUN useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin leanworker
+USER 10001:10001
+ENV SZL_MATHLIB_WORKSPACE=/opt/mathlib-ws
+CMD ["python3", "-c", "import isolated_worker as w; raise SystemExit(0 if w.probe_sandbox() else 1)"]

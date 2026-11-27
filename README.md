@@ -34,6 +34,30 @@ refuted-as-stated claims, and examples as examples. Preserve the locked-eight
 membership and exact theorem hypotheses. Do not change running Flagship54 or
 admit the private Brain graph to gradients. No budget or launch gate is changed.
 
+### Isolated worker (`isolated_worker.py`)
+
+`isolated_worker.classify(probe_id, statement, attempt, lane=...)` is the rollout
+lane for untrusted completions. It keeps the referee's splice, abstention and
+target-bound axiom contract, and runs Lean inside bubblewrap with every
+namespace unshared (no network), a cleared environment (no tokens or HOME), a
+read-only toolchain, a per-attempt writable work dir, rlimits and a wall-clock
+timeout. If the sandbox cannot start, nothing runs unsandboxed: the verdict is
+`BUILD_ERROR` with `isolated-worker-unavailable` (reward 0). Attempts with
+metaprogramming or output commands (`#eval`, `run_tac`, `elab`, `trace`,
+`set_option`, `import`, ...) are rejected before execution.
+
+- `lane="core"`: core Lean, the same statements as the fast lane.
+- `lane="mathlib"`: `import Mathlib` statements (for example lutar-lean
+  `benchmark/estate_pinned_v1.jsonl` targets) against a pre-built Mathlib
+  workspace mounted read-only. `worker/setup_mathlib_workspace.sh` builds it
+  at image-build time from `worker/mathlib-pin.json` (lutar-lean's Mathlib rev).
+  `worker/Dockerfile.worker` is the image recipe (not built or pushed by CI).
+
+Observations carry `mode: isolated-core|isolated-mathlib` and
+`training_authority: NONE`; `admission.py` still admits lake-lane receipts only.
+The axiom check still reads Lean's printed report, so independent replay
+(for example `lean4checker`) remains a separate required control.
+
 See Lean's official [proof-validation guidance](https://lean-lang.org/doc/reference/latest/ValidatingProofs/).
 
 ## What this is
