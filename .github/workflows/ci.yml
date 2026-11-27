@@ -75,3 +75,29 @@ jobs:
           python -B proving54/admission.py
           python -B proving54/cli.py doctor
           python -B -m unittest discover -s tests -p 'test_proving54_*.py' -v
+
+  isolated-worker:
+    # OS-isolated, credential-free Lean worker (bwrap): fail-closed contract,
+    # sandbox properties (no env, no network, no HOME, read-only toolchain),
+    # core lane and a pinned real-Mathlib lane. No model, GPU or credentials.
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Install bubblewrap and allow unprivileged user namespaces on the runner
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      - name: Install elan + pinned Lean toolchain
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/v4.2.4/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: Build the pinned read-only Mathlib workspace (network at setup only)
+        run: ./worker/setup_mathlib_workspace.sh "$RUNNER_TEMP/mathlib-ws"
+      - name: Isolated worker suite (sandbox required, real Mathlib lane on)
+        env:
+          SZL_REQUIRE_SANDBOX: "1"
+        run: |
+          export SZL_MATHLIB_WORKSPACE="$RUNNER_TEMP/mathlib-ws"
+          python3 -B -m unittest discover -s tests -p 'test_isolated_worker.py' -v

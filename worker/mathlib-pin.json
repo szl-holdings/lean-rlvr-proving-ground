@@ -1,0 +1,6 @@
+{
+  "source": "szl-holdings/lutar-lean@cd984770d396e964a373cbf6d0f1e9ba82bdbb21 lake-manifest.json",
+  "toolchain": "leanprover/lean4:v4.35.0",
+  "mathlib_rev": "56a005855ea17e0b0958f73ec801ae140b0a1679",
+  "mathlib_input_rev": "v4.35.0"
+}
